@@ -5,10 +5,12 @@ class PWInput(PWInputPMG):
     '''
     Subclass of pymatgen's PWInput which adds:
         * PWInput.as_dict() for storing a PWInput object as a dictionary
-        * PWInput.from_dict(pwinput_dict) for restoring a PWInput object from a dictionary
+        * PWInput.from_dict(pwinput_dict) for restoring a PWInput object
+              from a dictionary
     :param structure: pymatgen Structure object
     :param pseudo: pseudopotential dictionary where keys are elements / species
-        and values are the paths to the pseudopotentials for writing in the pw.x input
+        and values are the paths to the pseudopotentials for writing in the
+        pw.x input
     :param control: dictionary of the parameters in the CONTROL card of pw.x
     :param system: dictionary of the parameters in the SYSTEM card of pw.x
     :param electrons: dictionary of the parameters in the ELECTRONS card of pw.x

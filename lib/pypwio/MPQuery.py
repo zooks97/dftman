@@ -23,7 +23,11 @@ class MPQuery(object):
 
     @property
     def df(self):
-        return pd.DataFrame(self.result)
+        if self.result:
+            df = pd.DataFrame(self.result).set_index('material_id')
+        else:
+            df = pd.DataFrame([])
+        return df
     
     def as_dict(self):
         dict_ = {

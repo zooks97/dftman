@@ -1,4 +1,7 @@
 import warnings
+import tabulate
+import pandas as pd
+import pprint
 from pymatgen import Structure
 
 A_PER_BOHR = 0.52917720859
@@ -9,47 +12,31 @@ class PWOutput():
     '''
     Class which parses pw.x standard output into useful physical and 
         simulation properties
-    :param stdout_string: python string (decoded) of the standard output from a pw.x simulation
-    :param stdout_path: string describing the path to the standard output file from pw.x,
-        used for bookkeeping
+    :param stdout_string: python string (decoded) of the standard
+        output from a pw.x simulation
+    :param stdout_path: string describing the path to the standard
+        output file from pw.x, used for bookkeeping
     '''
     def __init__(self, stdout_string, stdout_path=None):
         self.stdout_path = stdout_path
         self.stdout_lines = stdout_string.split('\n')
-        self.critical_warnings = {'job_done': self.check_job_done(),
-                                  'electronically_converged': self.check_electronic_convergence(),
-                                  'cpu_time_exceeded': self.check_cpu_time(),
-                                  'max_steps_reached': self.check_max_steps(),
-                                  'max_wentzcovitch_iterations': self.check_wentzcovitch(),
-                                  'eigenvalues_converged': self.check_eigenvalues(),
-                                  'general_error': self.check_general_error(),
-                                 }
-        self.minor_warnings = {'general_warning': self.check_general_warning(),
-                               'used_deprecated': self.check_deprecated(),
-                               'incommensurate_fft_grid': self.check_fft_grid(),
-                               'large_scf_correction': self.check_scf_correction(),
-                              }
-        self.success = self.check_success()
         return
 
     def __repr__(self):
-        # success = str(self.check_success())
-        # structure = 
-        # energy = 
-        # stress = 
-        # forces = 
-        pass 
+        return pprint.pformat(self.output_dict)
                           
     ## CRITICAL WARNINGS ##
-    def check_job_done(self):
+    @property
+    def job_done(self):
         text = ''.join(self.stdout_lines)
         if 'JOB DONE' in text:
             return True
         else:
             warnings.warn('Not marked "JOB DONE"')
             return False
-
-    def check_electronic_convergence(self):
+    
+    @property
+    def electronically_converged(self):
         text = ''.join(self.stdout_lines)
         if 'convergence NOT' in text:
             warnings.warn('SCF convergence NOT achieved.')
@@ -57,7 +44,8 @@ class PWOutput():
         else:
             return True
 
-    def check_cpu_time(self):
+    @property
+    def cpu_time_exceeded(self):
         text = ''.join(self.stdout_lines)
         if 'Maximum CPU time exceeded' in text:
             warnings.warn('Maximum CPU time exceeded.')
@@ -65,23 +53,28 @@ class PWOutput():
         else:
             return False
 
-    def check_max_steps(self):
+    @property
+    def max_steps_reached(self):
         text = ''.join(self.stdout_lines)
         if 'The maximum number of steps has been reached.' in text:
-            warnings.warn('The maximum number of ionic/electronic relaxation steps has been reached.')
+            warnings.warn('The maximum number of ionic/electronic'
+                          ' relaxation steps has been reached.')
             return True
         else:
             return False
-        
-    def check_wentzcovitch(self):
+    
+    @property
+    def wentzcovitch_max_reached(self):
         text = ''.join(self.stdout_lines)
         if 'iterations completed, stopping' in text:
-            warnings.warn('The maximum number of iterations was reached in Wentzcovitch Damped Dynamics.')
+            warnings.warn('The maximum number of iterations was'
+                          ' reached in Wentzcovitch Damped Dynamics.')
             return True
         else:
             return False
-        
-    def check_eigenvalues(self):
+    
+    @property
+    def eigenvalues_converged(self):
         # not sure if this is critical? AZ
         for line in self.stdout_lines:
             if 'c_bands' in line and 'eigenvalues not converged' in line:
@@ -89,8 +82,9 @@ class PWOutput():
                 return False
             else:
                 return True
-        
-    def check_general_error(self):
+    
+    @property
+    def general_error(self):
         text = ''.join(self.stdout_lines)
         if '%%%%%%%%%%%%%%' in text:
             warnings.warn('Something probably went very wrong, an error occurred.')
@@ -99,23 +93,29 @@ class PWOutput():
             return False
         
     ## MINOR WARNINGS ##
-    def check_general_warning(self):
+    @property
+    def general_warning(self):
         text = ''.join(self.stdout_lines)
         if 'Warning' in text:
-            warnings.warn('Something probably went kind of wrong, a warning was given.')
+#             warnings.warn('Something may have gone kind of wrong,'
+#                           ' a warning was given. Sometimes this happens when'
+#                           ' extra cards are given (e.g. in an ION in an scf'
+#                           ' calculation).')
             return True
         else:
             return False
         
-    def check_deprecated(self):
+    @property
+    def deprecated_feature_used(self):
         text = ''.join(self.stdout_lines)
         if 'DEPRECATED' in text:
             warnings.warn('You used a deprecated feature, try not to do that in the future.')
             return True
         else:
             return False
-        
-    def check_fft_grid(self):
+    
+    @property
+    def incommensurate_fft_grid(self):
         text = ''.join(self.stdout_lines)
         if 'incommensurate with FFT grid' in text:
             warnings.warn('The FFT grid is incommensurate, so some symmetries may be lost.')
@@ -132,14 +132,15 @@ class PWOutput():
             return False
 
     ## ERROR / COMPLETION SUMMARY ##
-    def check_success(self):
-        if any([self.critical_warnings['cpu_time_exceeded'],
-                self.critical_warnings['max_steps_reached'],
-                self.critical_warnings['max_wentzcovitch_iterations'],
-                self.critical_warnings['general_error'],
-                not self.critical_warnings['job_done'],
-                not self.critical_warnings['electronically_converged'],
-                not self.critical_warnings['eigenvalues_converged']]):
+    @property
+    def succeeded(self):
+        if any([self.cpu_time_exceeded,
+                self.max_steps_reached,
+                self.wentzcovitch_max_reached,
+                self.general_error,
+                not self.job_done,
+                not self.electronically_converged,
+                not self.eigenvalues_converged]):
                 return False
         else:
             return True
@@ -397,7 +398,7 @@ class PWOutput():
                 return None
         else:
             # NEW
-            warnings.warn('{} has no FINAL volume. Returning LAST volume.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL volume. Returning LAST volume.'.format(self.stdout_path))
             reversed_stdout_lines = list(reversed(self.stdout_lines))
             for l, line in enumerate(reversed_stdout_lines):
                 if 'new unit-cell volume' in line:
@@ -418,7 +419,7 @@ class PWOutput():
                         while self.final_coordinates_section[i].strip():
                             tmp_line = self.final_coordinates_section[i]
                             # Angstrom
-                            final_unit_cell.append([float(j) for j in tmp_line.strip().split()])
+                            final_unit_cell.append([float(j) for j in   tmp_line.strip().split()])
                             i += 1
                         i += 1
                         return final_unit_cell
@@ -426,7 +427,7 @@ class PWOutput():
                 return None
         else:
             # NEW
-            warnings.warn('{} has no FINAL unit cell. Returning LAST unit cell.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL unit cell. Returning LAST unit cell.'.format(self.stdout_path))
             reversed_stdout_lines = list(reversed(self.stdout_lines))
             for l, line in enumerate(reversed_stdout_lines):
                 if 'CELL_PARAMETERS' in line:
@@ -460,7 +461,7 @@ class PWOutput():
                 return None
         else:
             # NEW
-            warnings.warn('{} has no FINAL atomic positions. Returning LAST atomic positions.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL atomic positions. Returning LAST atomic positions.'.format(self.stdout_path))
             reversed_stdout_lines = list(reversed(self.stdout_lines))
             for l, line in enumerate(reversed_stdout_lines):
                 if 'ATOMIC_POSITIONS' in line:
@@ -581,6 +582,8 @@ class PWOutput():
                     energy_ry = float(line.split()[-2])  # Ry/cell
                     energy_ev = energy_ry * EV_PER_RY  # eV/cell
                     return energy_ev
+        elif self.final_total_energy:
+            return self.final_total_energy
         else:
             return None
 
@@ -629,7 +632,60 @@ class PWOutput():
 
 
     ## CONVENIENCE AND STORAGE ##
-    def as_dict(self):
+    @property
+    def output_dict(self):
+        dict_ = {
+            'job_done': self.job_done,
+            'electronically_converged': self.electronically_converged,
+            'cpu_time_exceeded': self.cpu_time_exceeded,
+            'max_steps_reached': self.max_steps_reached,
+            'wentzcovitch_max_reached': self.wentzcovitch_max_reached,
+            'eigenvalues_converged': self.eigenvalues_converged,
+            'general_error': self.general_error,
+            'general_warning': self.general_warning,
+            'deprecated_feature_used': self.deprecated_feature_used,
+            'incommensurate_fft_grid': self.incommensurate_fft_grid,
+            'succeeded': self.succeeded,
+            # 'spin_polarized': self.spin_polarized,
+            'bravais_index': self.bravais_index,
+            # 'n_electrons': self.n_electrons,
+            # 'ke_cutoff': self.ke_cutoff,
+            # 'convergence_threshold': self.convergence_threshold,
+            # 'mixing_beta': self.mixing_beta,
+            'number_of_iterations_used': self.number_of_iterations_used,
+            # 'exchange_correlation': self.exchange_correlation,
+            # 'n_steps': self.n_steps,
+            # 'rho_cutoff': self.rho_cutoff,
+            # 'n_atoms': self.n_atoms,
+            # 'n_species': self.n_species,
+            # 'n_bands': self.n_bands,
+            # 'n_kpoints': self.n_kpoints,
+            # 'vdw_correction': self.vdw_correction,
+            # 'initial_alat': self.initial_alat,
+            # 'initial_volume': self.initial_volume,
+            # 'initial_unit_cell': self.initial_unit_cell,
+            # 'initial_atomic_positions': self.initial_atomic_positions,
+            'initial_structure': self.initial_structure,
+            'initial_pressure': self.initial_pressure,
+            'initial_total_energy': self.initial_total_energy,
+            'initial_enthalpy': self.initial_enthalpy,
+            # 'final_coordinates_section': self.final_coordinates_section,
+            # 'final_volume': self.final_volume,
+            # 'final_unit_cell': self.final_unit_cell,
+            # 'final_atomic_positions': self.final_atomic_positions,
+            'final_structure': self.final_structure,
+            'final_pressure': self.final_pressure,
+            'final_pressure_tensor': self.final_pressure_tensor,
+            'final_total_energy': self.final_total_energy,
+            'final_enthalpy': self.final_enthalpy,
+            'final_absolute_magnetization': self.final_absolute_magnetization,
+            'final_fermi_energy': self.final_fermi_energy,
+            'final_energy': self.final_energy,
+            # 'walltime': self.walltime,           
+        }
+        return dict_
+    
+    def as_dict(self):      
         dict_ = {'stdout_lines': self.stdout_lines,
                  'stdout_path': self.stdout_path}
         return dict_

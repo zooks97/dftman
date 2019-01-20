@@ -2,11 +2,7 @@ import pprint
 import os.path
 
 from PWOutput import PWOutput
-# from PWXML import PWXML
 from pymatgen.io.pwscf import PWInput
-# from .PWOutput import PWOutput
-# from .PWXML import PWXML
-# from .PWInput import PWInput
 
 class PWCalculation():
     '''
@@ -15,21 +11,18 @@ class PWCalculation():
     :param output: PWOutput object
     '''
     def __init__(self, input_, output=None,
-                 input_name=None, output_name=None,
-                 directory='./'):
+                 input_name=None, directory='./',
+                 additional_inputs=None):
         self.input = input_
         self.output = output
         self.input_name = input_name
-        self.output_name = output_name
+        self.output_name = None
         self.directory = directory
         
         prefix = self.input.sections['control'].get('prefix')
         if not self.input_name:
             self.input_name = '{}.in'.format(prefix)
-        if not self.output_name:
-            self.output_name = '{}.out'.format(prefix)
-        self.additional_inputs = [os.path.basename(pseudo)\
-                                  for pseudo in self.input.pseudo.values()]
+        self.additional_inputs = additional_inputs
         return
 
     def __repr__(self):
