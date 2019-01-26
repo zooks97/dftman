@@ -9,10 +9,10 @@ import shutil
 
 import persistent
 
-from PWCalculation import PWCalculation
+# from PWCalculation import PWCalculation
+from . import PWCalculation
 
 # TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence of SubmitJob
-
 # TODO: rename all pw.x classes => PwClassName instead of PWClassName
 
 class SubmitJob(persistent.Persistent):

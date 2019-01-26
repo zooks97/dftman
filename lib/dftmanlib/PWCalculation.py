@@ -3,9 +3,11 @@ import os.path
 
 import persistent
 
-from PWInput import PWInput
-
-from PWOutput import PWOutput
+# from PWInput import PWInput
+# from PWOutput import PWOutput
+from . import PWInput
+from . import PWOutput
+from . import PWXML
 
 
 class PWCalculation(persistent.Persistent):

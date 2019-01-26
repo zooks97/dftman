@@ -17,10 +17,14 @@ import pandas as pd
 from pymatgen import Structure
 from IPython.display import clear_output
 
-from PWInput import PWInput
-from PWCalculation import PWCalculation
-from MPQuery import MPQuery
-from SubmitJob import SubmitJob
+# from PWInput import PWInput
+# from PWCalculation import PWCalculation
+# from MPQuery import MPQuery
+# from SubmitJob import SubmitJob
+from . import PWInput
+from . import PWCalculation
+from . import MPQuery
+from . import SubmitJob
 
 def pseudo_helper(structure, pseudo_family, pseudo_table_path):
     if isinstance(structure, dict):
