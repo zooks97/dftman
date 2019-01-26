@@ -1,0 +1,57 @@
+#!/bin/sh
+#PBS -S /bin/sh
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=01:00:00
+#PBS -N JOB_07028849_01
+#PBS -o pbs_Al20_01.stdout
+#PBS -e pbs_Al20_01.stderr
+#PBS -mn
+#PBS -q standby
+
+
+export SESSION=1441308
+
+
+# RemoteBatchPBS:makeMPITemplate
+# SubmissionScripts/Distributor/Batch/PBS/mpi
+
+trap cleanup HUP INT QUIT ABRT TERM
+
+cleanup()
+{
+   echo "Abnormal termination by signal"
+   if [ ! -s .__timestamp_finish.07028849_01 ] ; then
+      date +"%s" > .__timestamp_finish.07028849_01
+   fi
+   if [ ! -s .__time_results.07028849_01 ] ; then
+      cat > .__time_results.07028849_01 << EOF
+Command terminated by signal 3
+real 0.00
+user 0.00
+sys 0.00
+EOF
+   fi
+   exit 1
+}
+
+export PATH=${PBS_O_WORKDIR}:${PBS_O_PATH}
+# Change to directory where job was submitted.
+cd ${PBS_O_WORKDIR}
+
+ulimit -f 16528082
+
+chmod +x 07028849_01.sh
+date +"%s" > .__timestamp_start.07028849_01
+
+. ${MODULESHOME=/opt/lmod}/init/sh
+module purge 2> /dev/null
+. /depot/nanohub/etc/environ.sh
+use -e -r espresso-6.2.1
+mpirun -machinefile ${PBS_NODEFILE} -np 1 `pwd`/07028849_01.sh > Al20_01.stdout 2> Al20_01.stderr
+
+
+date +"%s" > .__timestamp_finish.07028849_01
+
+touch .__time_results.07028849_01-0
+cat .__time_results.07028849_01-[0-9]* >> .__time_results.07028849_01
+rm -f .__time_results.07028849_01-[0-9]*

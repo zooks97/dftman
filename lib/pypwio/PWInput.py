@@ -1,5 +1,30 @@
-from pymatgen import Structure
+import hashlib
+
+from collections import OrderedDict
+
 from pymatgen.io.pwscf import PWInput as PWInputPMG
+
+# TODO: figure out where sort_recursive and hash_dict should _actually_ go
+
+def sort_recursive(var0):
+    sorted_ = OrderedDict()
+    if isinstance(var0, dict):
+        for key, value in sorted(var0.items()):
+            sorted_[key] = sort_recursive(value)
+    elif isinstance(var0, (list, set, tuple)):
+        new_var0 = [sort_recursive(item) for item in var0]
+        return tuple(new_var0)
+    else:
+        return var0
+    return sorted_
+
+def hash_dict(dict_):
+    sorted_dict = sort_recursive(dict_)
+    hash_string = bytes(str(sorted_dict).encode())
+    sha256_hash = hashlib.sha256()
+    sha256_hash.update(hash_string)
+    return sha256_hash.hexdigest()[:6]
+
 
 class PWInput(PWInputPMG):
     '''
@@ -20,50 +45,10 @@ class PWInput(PWInputPMG):
     :param kpoints_grid: tuple of kpoints in the b1, b2, and b3 directions
     :param kpoints_shift: tuple of kpoints offset along b1, b2, and b3 directions
     '''
-    def __init__(self, structure, pseudo, control={}, system={},
-                 electrons={}, ions={}, cell={}, kpoints_mode="automatic",
-                 kpoints_grid=(1, 1, 1), kpoints_shift=(0, 0, 0)):
 
-        self.pseudo = pseudo      
-        self.structure = structure
-        self.sections = {'control': control,
-                         'system': system,
-                         'electrons': electrons,
-                         'ions': ions,
-                         'cell': cell}
-        
-        self.pseudo = pseudo
-        self.kpoints_mode = kpoints_mode
-        self.kpoints_grid = kpoints_grid
-        self.kpoints_shift = kpoints_shift
-                
-        super(PWInput, self).__init__(self.structure, self.pseudo,
-                self.sections['control'], self.sections['system'],
-                self.sections['electrons'], self.sections['ions'], self.sections['cell'],
-                self.kpoints_mode, self.kpoints_grid, self.kpoints_shift)
-        return
-
-    def __repr__(self):
-        return str(self)
-        
-    def as_dict(self):
-        dict_ = {'structure': self.structure.as_dict(),
-                 'pseudo': self.pseudo,
-                 'sections': self.sections,
-                 'kpoints_mode': self.kpoints_mode,
-                 'kpoints_grid': self.kpoints_grid,
-                 'kpoints_shift': self.kpoints_shift}
-        return dict_
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
     
-    @classmethod
-    def from_dict(cls, dict_):
-        return cls(structure=Structure.from_dict(dict_['structure']),
-                   pseudo=dict_['pseudo'],
-                   control=dict_['sections']['control'],
-                   system=dict_['sections']['system'],
-                   electrons=dict_['sections']['electrons'],
-                   ions=dict_['sections']['ions'],
-                   cell=dict_['sections']['cell'],
-                   kpoints_mode=dict_['kpoints_mode'],
-                   kpoints_grid=dict_['kpoints_grid'],
-                   kpoints_shift=dict_['kpoints_shift'])
+    @property
+    def key(self):
+        return hash_dict(self.as_dict())

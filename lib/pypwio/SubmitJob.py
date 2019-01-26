@@ -4,34 +4,75 @@ import time
 import random
 import re
 import os
+import pprint
+import shutil
 
-# TODO: fix output_path for pw calculations
-#    the pw input needs to know the output file name
-class SubmitJob():
-    
+import persistent
+
+from PWCalculation import PWCalculation
+
+# TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence of SubmitJob
+
+# TODO: rename all pw.x classes => PwClassName instead of PWClassName
+
+class SubmitJob(persistent.Persistent):
+    '''
+    Persistent class which represents a submit job on nanoHUB
+    :param calculation:
+    :param code:
+    :param walltime:
+    :param ncpus:
+    :param runname:
+    :param directory:
+    :param id:
+    :param status:
+    :param location:
+    :param submission_time:
+    :param run:
+    '''
     def __init__(self, calculation, code,
-                 walltime='01:00:00', ncpus=1, runname=None):
+                 walltime='01:00:00', ncpus=1,
+                 runname=None, directory=None,
+                 id=None, status=None, location=None,
+                 submission_time=None, run=None):
         self.calculation = calculation
         self.code = code
-        self.walltime = walltime# self._walltime_to_seconds(walltime)
+        self.walltime = walltime
         self.ncpus = ncpus
         if runname:
-            self.runname = runname
+            if runname.isalnum():
+                self.runname = runname
+            else:
+                raise ValueError('runname must be strictly alphanumeric.')
         else:
-            self.runname = str(random.randint(1000, 1000000))
-        self.id = None
-        self.status = None
-        self.location = None
-        self.submission_time = None
-        self.run = False
+            self.runname = str(random.randint(1000, 999999))
+        if directory:
+            self.directory = directory
+        else:
+            # TODO: decide what to do with calculation.directory
+            self.directory = './jobs/{}_{}/'.format(self.runname, self.key)
+        
+        self.id = id
+        self.status = status
+        self.location = location
+        self.submission_time = submission_time
+        self.run = run
     
-    def submit(self, block_if_run=True):
+    def __repr__(self):
+        return pprint.pformat(self.as_dict())
+    
+    def submit(self, report=True, block_if_run=True):
         if block_if_run and self.run:
             print('Already run, not submitting')
             return
         else:
+            if not os.path.exists(self.directory):
+                os.makedirs(self.directory)
+            self.calculation.write_input(name=self.runname+'.in',
+                                         directory=self.directory)
+            
             process = subprocess.Popen(shlex.split(self.command),
-                                       cwd=self.calculation.directory,
+                                       cwd=self.directory,
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE)
         self.run = True
@@ -45,6 +86,7 @@ class SubmitJob():
             raise ValueError('Could not find id. Didn\'t submit?')
         self.status = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
+        print('Submitted job {} {}'.format(self.runname, self.key))
         return process
     
     def attach(self):
@@ -63,28 +105,48 @@ class SubmitJob():
                 runname, id_, instance, status, location = info_line.split()
                 id_, instance = int(id_), int(instance)
                 self.status = status
+                self.location = location
+            else:
+                if os.path.exists(self.output_path):
+                    self.status = 'Complete'
+                    self.attach()
         else:
             if os.path.exists(self.output_path):
                 self.status = 'Complete'
+                self.attach()
                 
         return self.status
     
     # TODO: add cleaning option to delete directory and/or files
-    def kill(self):
-        process = subprocess.Run(['submit', '--kill', str(self.id)])
+    def kill(self, clean=True):
+        process = subprocess.run(['submit', '--kill', str(self.id)])
+        self.status = 'Killed'
+        if clean:
+            shutil.rmtree(self.directory)
+    
+    def parse_output(self):
+        return self.calculation.parse_output(name=self.output_name,
+                                             directory=self.directory)
+        
+    @property
+    def key(self):
+        return self.calculation.key
         
     @property
     def input_path(self):
-        return os.path.join(self.calculation.directory, self.calculation.input_name)
+        return os.path.join(self.directory, self.calculation.input_name)
+    
+    @property
+    def output_name(self):
+        if self.calculation.output_name:
+            return self.calculation.output_name
+        else:
+            return str(self.runname)+'.stdout'
     
     @property
     def output_path(self):
-        if self.calculation.output_name:
-            return os.path.join(self.calculation.directory,
-                                self.calculation.output_name)
-        else:
-            return os.path.join(self.calculation.directory,
-                                str(self.id)+'.stdout')
+            return os.path.join(self.directory,
+                                self.output_name)
 
     @property
     def stdout(self):
@@ -121,8 +183,6 @@ class SubmitJob():
         base_command = 'submit --detach -n {ncpus:d} -w {walltime:s}'\
                        ' {runname:s} {additional_inputs:s}'\
                        ' {code:s} -in {input_name:s}'
-        self.calculation.write_input()
-        input_name = self.calculation.input_name
         
         if self.runname:
             runname_string = '--runName="{:s}"'.format(self.runname)
@@ -141,7 +201,7 @@ class SubmitJob():
             'runname': runname_string,
             'additional_inputs': additional_inputs_string,
             'code': self.code,
-            'input_name': input_name
+            'input_name': self.calculation.input_name
         }
         
         command = base_command.format(**submit_data)
@@ -152,8 +212,12 @@ class SubmitJob():
         return sum([a*b for a,b in zip(ftr, map(int,walltime.split(':')))])
     
     def as_dict(self):
+        calculation_dict = self.calculation.as_dict()
+        if calculation_dict.get('output'):
+            if calculation_dict['output'].get('stdout_string'):
+                del calculation_dict['output']['stdout_string']
         dict_ = {
-            'calculation': self.calculation.as_dict(),
+            'calculation': calculation_dict,
             'code': self.code,
             'walltime': self.walltime,
             'ncpus': self.ncpus,
@@ -165,6 +229,8 @@ class SubmitJob():
         }
         return dict_
     
+    # TODO: find a way to load a generic calculation from dictionary
     @classmethod
     def from_dict(cls, dict_):
+        dict_['calculation'] = PWCalculation.from_dict(dict_['calculation'])
         return cls(**dict_)

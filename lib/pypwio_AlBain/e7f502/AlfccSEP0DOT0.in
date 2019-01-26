@@ -1,0 +1,39 @@
+&CONTROL
+  calculation = 'scf',
+  disk_io = 'none',
+  outdir = './',
+  prefix = 'pwscf',
+  pseudo_dir = './',
+  restart_mode = 'from_scratch',
+  verbosity = 'high',
+/
+&SYSTEM
+  degauss = 0.01,
+  ecutwfc = 25.0,
+  ibrav = 0,
+  occupations = 'smearing',
+  smearing = 'mv',
+  nat = 4,
+  ntyp = 1,
+/
+&ELECTRONS
+  conv_thr = 1d-07,
+  electron_maxstep = 500,
+/
+&IONS
+/
+&CELL
+/
+ATOMIC_SPECIES
+  Al  26.9815 al_pbe_v1.uspp.F.UPF
+ATOMIC_POSITIONS crystal
+  Al 0.000000 0.000000 0.000000
+  Al 0.500000 0.500000 0.000000
+  Al 0.500000 0.000000 0.500000
+  Al 0.000000 0.500000 0.500000
+K_POINTS automatic
+  18 18 18 0 0 0
+CELL_PARAMETERS angstrom
+  4.038930 0.000000 0.000000
+  0.000000 4.038930 0.000000
+  0.000000 0.000000 4.038930

@@ -1,14 +1,22 @@
 import warnings
 import tabulate
-import pandas as pd
 import pprint
+
+import persistent
+
+import pandas as pd
+
 from pymatgen import Structure
 
 A_PER_BOHR = 0.52917720859
 A3_PER_BOHR3 = A_PER_BOHR ** 3
 EV_PER_RY = 13.6056917253
 
-class PWOutput():
+# TODO: figure out how to communicate units (doc strings?)
+# TODO: better differentiate scf, relax, and vc-relax 
+# TODO: figure out better names for the outputs
+
+class PWOutput(persistent.Persistent):
     '''
     Class which parses pw.x standard output into useful physical and 
         simulation properties
@@ -686,8 +694,9 @@ class PWOutput():
         return dict_
     
     def as_dict(self):      
-        dict_ = {'stdout_lines': self.stdout_lines,
-                 'stdout_path': self.stdout_path}
+        dict_ = {'stdout_string': '\n'.join(self.stdout_lines),
+                 'stdout_path': self.stdout_path,
+                 **self.output_dict}
         return dict_
 
     # TODO: explicitly return all parsed output parameters
