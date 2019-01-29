@@ -31,9 +31,9 @@ qgrid.enable()
 INSTALL_PATH = str(pathlib.Path.cwd())  # determine where dftman is installed
 
 GLOBAL_LIB_PATH = '/apps/dftman/dev/lib'
-LOCAL_LIB_PATH = 'lib'
+LOCAL_LIB_PATH = './lib'
 
-GLOBAL_BIN_PATH = '/apps/dftman/dev/bin'
+GLOBAL_BIN_PATH = './bin'
 
 LOCAL_SRC_PATH = 'src'
 

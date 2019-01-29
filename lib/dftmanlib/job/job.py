@@ -1,22 +1,17 @@
 import subprocess
 import pandas as pd
 
-def statuses(jobs, commit_transaction=True):
+JOBS_DIRECTORY = './jobs'
+
+def submitjob_statuses(jobs):
     status_dicts = []
     for job in jobs:
-        status_dicts.append({'Run Name': job.runname,
-                             'ID': job.id,
-                             'Status': job.check_status(
-                                 commit_transaction=commit_transaction),
-                             'Location': job.location,
-                             'Submission Time': job.submission_time,
-                             'Key': job.key})
+        status_dicts.append(job.check_status())
     df = pd.DataFrame(status_dicts)
     if not df.empty:
-        df.set_index('Run Name')
-        return df[['ID', 'Status', 'Location', 'Submission Time', 'Key']]
-    else:
-        return df
+        df = df.set_index('Run Name')
+        df = df[['ID', 'Location', 'Submission Time', 'Key']]
+    return df
     
 def submit_status():
     status_text = subprocess.check_output(['submit', '--status']).decode('utf-8').strip()

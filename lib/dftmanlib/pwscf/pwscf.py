@@ -1,9 +1,11 @@
-import hashlib
 import pprint
 import os.path
 import warnings
 import tabulate
 import pprint
+import json
+import pathlib
+import copy
 
 from collections import OrderedDict
 
@@ -14,6 +16,8 @@ import pandas as pd
 
 from pymatgen import Structure
 from pymatgen.io.pwscf import PWInput as PWInputPMG
+
+from ..base import hash_dict
 
 A_PER_BOHR = 0.52917720859
 A3_PER_BOHR3 = A_PER_BOHR ** 3
@@ -49,6 +53,25 @@ class PWInput(persistent.Persistent, PWInputPMG):
     
     def write_input(self, filename):
         self.write_file(filename)
+        
+    def as_dict(cls):
+        dict_ = {
+            '@module': self.__class__.__module__, 
+            '@class': self.__class__.__name__,
+            'structure': self.structure.as_dict(),
+            'pseudo': self.pseudo,
+            'sections': self.sections,
+            'kpoints_mode': self.kpoints_mode,
+            'kpoints_grid': self.kpoints_grid,
+            'kpoints_shift': self.kpoints_shift\
+        }
+        
+    @classmethod
+    def from_dict(cls, dict_):
+        decoded = {key: MontyDecoder().process_decoded(value)
+                   for key, value in dict_.items()
+                   if not key.startswith("@")}
+        return cls(**decoded)
 
         
 class PWCalculation(persistent.Persistent):
@@ -74,6 +97,7 @@ class PWCalculation(persistent.Persistent):
         self.output_name = None
         self.output_type = output_type
         self.directory = directory
+        self._output_dict = None
         
         prefix = self.input.sections['control'].get('prefix')
         if not self.input_name:
@@ -86,6 +110,16 @@ class PWCalculation(persistent.Persistent):
         del dict_['output']['stdout_string']
         print(dict_['output'].keys())
         return pprint.pformat(dict_)
+    
+    @property
+    def key(self):
+        '''
+        Return the calculation's input's key, which is a 
+            hash value for the input which should uniquely
+            identify it
+        :return: key (hash) string
+        '''
+        return self.input.key
     
     def write_input(self, name=None, directory=None):
         '''
@@ -138,42 +172,26 @@ class PWCalculation(persistent.Persistent):
 
     def as_dict(self):
         dict_ = {
+            '@module': self.__class__.__module__,
+            '@class': self.__class__.__name__,
             'additional_inputs': self.additional_inputs,
             'directory': self.directory,
             'input_name': self.input_name,
             'input': self.input.as_dict(),
             'output_name': self.output_name,
             'output_type': self.output_type,
-            'output': self.output.as_dict() if self.output else None,
+            'output': self.output.output_dict
         }
         return dict_
 
-    @property
-    def key(self):
-        '''
-        Return the calculation's input's key, which is a 
-            hash value for the input which should uniquely
-            identify it
-        :return: key (hash) string
-        '''
-        return self.input.key
-    
     @classmethod
     def from_dict(cls, dict_):
-        input_ = PWInput.from_dict(dict_['input'])
-        if dict_['output']:
-            if dict_['output_type'] == 'stdout':
-                output = PWOutput.from_dict(dict_['output'])
-            elif dict_['output_type'] == 'xml':
-                output = PWXML.from_dict(dict_['output'])
-        else:
-            output = dict_['output']
-        calculation = cls(input_, output,
-                          input_name=dict_['input_name'],
-                          output_name=dict_['output_name'],
-                          additional_inputs=dict_['additional_inputs'],
-                          directory=dict_['directory'])
-        return calculation
+        decoded = {key: MontyDecoder().process_decoded(value)
+                   for key, value in dict_.items()
+                   if not key.startswith("@")}
+        return cls(**decoded)
+        
+
 
         
 class PWOutput(persistent.Persistent):
@@ -231,14 +249,14 @@ class PWOutput(persistent.Persistent):
         if 'JOB DONE' in text:
             return True
         else:
-            warnings.warn('Not marked "JOB DONE"')
+            # warnings.warn('Not marked "JOB DONE"')
             return False
     
     @property
     def electronically_converged(self):
         text = ''.join(self._lines)
         if 'convergence NOT' in text:
-            warnings.warn('SCF convergence NOT achieved.')
+            # warnings.warn('SCF convergence NOT achieved.')
             return False
         else:
             return True
@@ -247,7 +265,7 @@ class PWOutput(persistent.Persistent):
     def cpu_time_exceeded(self):
         text = ''.join(self._lines)
         if 'Maximum CPU time exceeded' in text:
-            warnings.warn('Maximum CPU time exceeded.')
+            # warnings.warn('Maximum CPU time exceeded.')
             return True
         else:
             return False
@@ -256,8 +274,8 @@ class PWOutput(persistent.Persistent):
     def max_steps_reached(self):
         text = ''.join(self._lines)
         if 'The maximum number of steps has been reached.' in text:
-            warnings.warn('The maximum number of ionic/electronic'
-                          ' relaxation steps has been reached.')
+            # warnings.warn('The maximum number of ionic/electronic'
+            #               ' relaxation steps has been reached.')
             return True
         else:
             return False
@@ -266,8 +284,8 @@ class PWOutput(persistent.Persistent):
     def wentzcovitch_max_reached(self):
         text = ''.join(self._lines)
         if 'iterations completed, stopping' in text:
-            warnings.warn('The maximum number of iterations was'
-                          ' reached in Wentzcovitch Damped Dynamics.')
+            # warnings.warn('The maximum number of iterations was'
+            #               ' reached in Wentzcovitch Damped Dynamics.')
             return True
         else:
             return False
@@ -277,7 +295,7 @@ class PWOutput(persistent.Persistent):
         # not sure if this is critical? AZ
         for line in self._lines:
             if 'c_bands' in line and 'eigenvalues not converged' in line:
-                warnings.warn('The eigenvalues are not converged')
+                # warnings.warn('The eigenvalues are not converged')
                 return False
             else:
                 return True
@@ -286,7 +304,7 @@ class PWOutput(persistent.Persistent):
     def general_error(self):
         text = ''.join(self._lines)
         if '%%%%%%%%%%%%%%' in text:
-            warnings.warn('Something probably went very wrong, an error occurred.')
+            # warnings.warn('Something probably went very wrong, an error occurred.')
             return True
         else:
             return False
@@ -308,7 +326,7 @@ class PWOutput(persistent.Persistent):
     def deprecated_feature_used(self):
         text = ''.join(self._lines)
         if 'DEPRECATED' in text:
-            warnings.warn('You used a deprecated feature, try not to do that in the future.')
+            # warnings.warn('You used a deprecated feature, try not to do that in the future.')
             return True
         else:
             return False
@@ -317,7 +335,7 @@ class PWOutput(persistent.Persistent):
     def incommensurate_fft_grid(self):
         text = ''.join(self._lines)
         if 'incommensurate with FFT grid' in text:
-            warnings.warn('The FFT grid is incommensurate, so some symmetries may be lost.')
+            # warnings.warn('The FFT grid is incommensurate, so some symmetries may be lost.')
             return True
         else:
             return False
@@ -326,7 +344,7 @@ class PWOutput(persistent.Persistent):
     def scf_correction_too_large(self):
         text = ''.join(self._lines)
         if 'SCF correction compared to forces is too large, reduce conv_thr' in text:
-            warnings.warn('The forces are inaccurate (SCF correction is too large): reduce conv_thr')
+            # warnings.warn('The forces are inaccurate (SCF correction is too large): reduce conv_thr')
             return True
         else:
             return False
@@ -834,56 +852,83 @@ class PWOutput(persistent.Persistent):
     ## CONVENIENCE AND STORAGE ##
     @property
     def output_dict(self):
+        if not self._output_dict:
+            dict_ = {
+                'job_done': self.job_done,
+                'electronically_converged': self.electronically_converged,
+                'cpu_time_exceeded': self.cpu_time_exceeded,
+                'max_steps_reached': self.max_steps_reached,
+                'wentzcovitch_max_reached': self.wentzcovitch_max_reached,
+                'eigenvalues_converged': self.eigenvalues_converged,
+                'general_error': self.general_error,
+                'general_warning': self.general_warning,
+                'deprecated_feature_used': self.deprecated_feature_used,
+                'incommensurate_fft_grid': self.incommensurate_fft_grid,
+                'succeeded': self.succeeded,
+                # 'spin_polarized': self.spin_polarized,
+                'bravais_index': self.bravais_index,
+                # 'n_electrons': self.n_electrons,
+                # 'ke_cutoff': self.ke_cutoff,
+                # 'convergence_threshold': self.convergence_threshold,
+                # 'mixing_beta': self.mixing_beta,
+                'number_of_iterations_used': self.number_of_iterations_used,
+                # 'exchange_correlation': self.exchange_correlation,
+                # 'n_steps': self.n_steps,
+                # 'rho_cutoff': self.rho_cutoff,
+                # 'n_atoms': self.n_atoms,
+                # 'n_species': self.n_species,
+                # 'n_bands': self.n_bands,
+                # 'n_kpoints': self.n_kpoints,
+                # 'vdw_correction': self.vdw_correction,
+                # 'initial_alat': self.initial_alat,
+                # 'initial_volume': self.initial_volume,
+                # 'initial_unit_cell': self.initial_unit_cell,
+                # 'initial_atomic_positions': self.initial_atomic_positions,
+                'initial_structure': self.initial_structure,
+                'initial_pressure': self.initial_pressure,
+                'initial_total_energy': self.initial_total_energy,
+                'initial_enthalpy': self.initial_enthalpy,
+                # 'final_coordinates_section': self.final_coordinates_section,
+                # 'final_volume': self.final_volume,
+                # 'final_unit_cell': self.final_unit_cell,
+                # 'final_atomic_positions': self.final_atomic_positions,
+                'final_structure': self.final_structure,
+                'final_pressure': self.final_pressure,
+                'final_pressure_tensor': self.final_pressure_tensor,
+                'final_total_energy': self.final_total_energy,
+                'final_enthalpy': self.final_enthalpy,
+                'final_absolute_magnetization': self.final_absolute_magnetization,
+                'final_fermi_energy': self.final_fermi_energy,
+                'final_energy': self.final_energy,
+                # 'walltime': self.walltime,           
+            }
+            return dict_
+        else:
+            return self._output_dict
+    
+    @output_dict.setter
+    def output_dict(self, value):
+        self._output_dict = value
+    
+    def as_dict(self):
         dict_ = {
-            'job_done': self.job_done,
-            'electronically_converged': self.electronically_converged,
-            'cpu_time_exceeded': self.cpu_time_exceeded,
-            'max_steps_reached': self.max_steps_reached,
-            'wentzcovitch_max_reached': self.wentzcovitch_max_reached,
-            'eigenvalues_converged': self.eigenvalues_converged,
-            'general_error': self.general_error,
-            'general_warning': self.general_warning,
-            'deprecated_feature_used': self.deprecated_feature_used,
-            'incommensurate_fft_grid': self.incommensurate_fft_grid,
-            'succeeded': self.succeeded,
-            # 'spin_polarized': self.spin_polarized,
-            'bravais_index': self.bravais_index,
-            # 'n_electrons': self.n_electrons,
-            # 'ke_cutoff': self.ke_cutoff,
-            # 'convergence_threshold': self.convergence_threshold,
-            # 'mixing_beta': self.mixing_beta,
-            'number_of_iterations_used': self.number_of_iterations_used,
-            # 'exchange_correlation': self.exchange_correlation,
-            # 'n_steps': self.n_steps,
-            # 'rho_cutoff': self.rho_cutoff,
-            # 'n_atoms': self.n_atoms,
-            # 'n_species': self.n_species,
-            # 'n_bands': self.n_bands,
-            # 'n_kpoints': self.n_kpoints,
-            # 'vdw_correction': self.vdw_correction,
-            # 'initial_alat': self.initial_alat,
-            # 'initial_volume': self.initial_volume,
-            # 'initial_unit_cell': self.initial_unit_cell,
-            # 'initial_atomic_positions': self.initial_atomic_positions,
-            'initial_structure': self.initial_structure,
-            'initial_pressure': self.initial_pressure,
-            'initial_total_energy': self.initial_total_energy,
-            'initial_enthalpy': self.initial_enthalpy,
-            # 'final_coordinates_section': self.final_coordinates_section,
-            # 'final_volume': self.final_volume,
-            # 'final_unit_cell': self.final_unit_cell,
-            # 'final_atomic_positions': self.final_atomic_positions,
-            'final_structure': self.final_structure,
-            'final_pressure': self.final_pressure,
-            'final_pressure_tensor': self.final_pressure_tensor,
-            'final_total_energy': self.final_total_energy,
-            'final_enthalpy': self.final_enthalpy,
-            'final_absolute_magnetization': self.final_absolute_magnetization,
-            'final_fermi_energy': self.final_fermi_energy,
-            'final_energy': self.final_energy,
-            # 'walltime': self.walltime,           
+            '@module': self.__class__.__module__,
+            '@class': self.__class__.__name__,
+            'input_': self.input,
+            'output': self.output,
+            'input_name': self.input_name,
+            'directory': self.directory,
+            'additional_inputs': self.additional_inputs,
+            'output_type' = self.output_type
         }
         return dict_
+        
+    @classmethod
+    def from_dict(cls, dict_):
+        decoded = {key: MontyDecoder().process_decoded(value)
+                   for key, value in dict_.items()
+                   if not key.startswith("@")}
+        return cls(**decoded)
     
     
 def pseudo_helper(structure, pseudo_family, pseudo_table_path):
@@ -946,22 +991,3 @@ def pwcalculation_helper(**kwargs):
     pwoutput = PWOutput()
     return PWCalculation(pwinput, output=pwoutput,
                          additional_inputs=additional_inputs)
-
-def sort_recursive(var0):
-    sorted_ = OrderedDict()
-    if isinstance(var0, dict):
-        for key, value in sorted(var0.items()):
-            sorted_[key] = sort_recursive(value)
-    elif isinstance(var0, (list, set, tuple)):
-        new_var0 = [sort_recursive(item) for item in var0]
-        return tuple(new_var0)
-    else:
-        return var0
-    return sorted_
-
-def hash_dict(dict_):
-    sorted_dict = sort_recursive(dict_)
-    hash_string = bytes(str(sorted_dict).encode())
-    blake2b_hash = hashlib.blake2b(digest_size=6, salt=b'htdft')
-    blake2b_hash.update(hash_string)
-    return blake2b_hash.hexdigest()

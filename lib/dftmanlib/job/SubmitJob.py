@@ -1,19 +1,24 @@
+from .. import base
+
 import subprocess
 import shlex
 import time
 import random
 import re
 import os
+import os.path
 import pprint
 import shutil
 
 import persistent
 import transaction
 
+from .job import JOBS_DIRECTORY
+
 # TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence of SubmitJob
 # TODO: rename all pw.x classes => PwClassName instead of PWClassName
 
-class SubmitJob(persistent.Persistent):
+class SubmitJob(base.Job):
     '''
     Persistent class which represents a submit job on nanoHUB
     :param calculation:
@@ -21,7 +26,7 @@ class SubmitJob(persistent.Persistent):
     :param walltime:
     :param ncpus:
     :param runname:
-    :param directory:
+    :param directory: parent directory for job directory
     :param id:
     :param status:
     :param location:
@@ -31,35 +36,41 @@ class SubmitJob(persistent.Persistent):
     def __init__(self, calculation, code,
                  walltime='01:00:00', ncpus=1,
                  runname=None, directory=None,
-                 id=None, status=None, location=None,
-                 submission_time=None, run=None,
                  metadata=None):
         self.calculation = calculation
         self.code = code
         self.walltime = walltime
-        self.ncpus = ncpus
-        if runname:
-            if runname.isalnum():
-                self.runname = runname
-            else:
-                raise ValueError('runname must be strictly alphanumeric.')
-        else:
-            self.runname = str(random.randint(1000, 999999))
-        if directory:
-            self.directory = directory
-        else:
-            # TODO: decide what to do with calculation.directory
-            self.directory = './jobs/{}_{}/'.format(self.runname, self.key)
-        
-        self.id = id
-        self.status = status
-        self.location = location
-        self.submission_time = submission_time
-        self.run = run
         self.metadata = metadata
+        
+        self.id = None
+        self.status = None
+        self.location = None
+        self.submission_time = None
+        self.run = False
+        self.process = None  
+        
+        if ncpus > 0 and ncpus <= 20:
+            self.ncpus = ncpus
+        else:
+            raise ValueError('ncpus must be in the range [0, 20]')
+        
+        if runname:
+            self.runname = runname
+        else:
+            self.runname = 'run{}'.format(random.randint(1000,999999))
+            
+        if directory:
+            self.directory = os.path.join(directory, self.key)
+        else:
+            self.directory = os.path.join(JOBS_DIRECTORY,
+                                          '{}_{}'.format(self.runname, self.key))
+            
+        self.input_name = self.calculation.input_name
+        self.output_name = str(self.runname)+'.stdout'
     
     def __repr__(self):
         return pprint.pformat(self.as_dict())
+
     
     def submit(self, report=True, block_if_run=True,
                commit_transaction=True):
@@ -76,21 +87,29 @@ class SubmitJob(persistent.Persistent):
                                        cwd=self.directory,
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE)
+
         self.run = True
+        
         stdout = process.stdout.peek().decode('utf-8')
         stderr = process.stderr.peek().decode('utf-8')
+        
         id_re = re.compile(r'Check run status with the command: submit --status (\d+)')
         id_match = re.search(id_re, stdout)
+        
         try:
             self.id = int(id_match.group(1))
         except:
             raise ValueError('Could not find id. Didn\'t submit?')
+        
         self.status = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
+        
         print('Submitted job {} {}'.format(self.runname, self.key))
+        
         if commit_transaction:
             transaction.commit()
-        return 
+
+        return
     
     def attach(self):
         process = subprocess.Popen(['submit', '--attach', str(self.id)],
@@ -108,11 +127,11 @@ class SubmitJob(persistent.Persistent):
     
     def check_status(self, commit_transaction=True):
         if self.status == 'Complete':
-            return self.status
+            return self.status_dict
         
         stdout = subprocess.check_output(['submit', '--status',
                                           str(self.id)]).decode('utf-8')
-        if stdout:
+        if stdout and self.runname in stdout:
             stdout_lines = stdout.strip().split('\n')
             if len(stdout_lines) > 1:
                 info_line = stdout_lines[-1]
@@ -138,13 +157,25 @@ class SubmitJob(persistent.Persistent):
                 self.attach()
         if commit_transaction:
             transaction.commit()
-                
-        return self.status
+            
+        return self.status_dict
     
     def parse_output(self):
         return self.calculation.parse_output(name=self.output_name,
                                              directory=self.directory)
-        
+    
+    @property
+    def status_dict(self):
+        status_dict = {
+            'Status': self.status,
+            'ID': self.id,
+            'Run Name': self.runname,
+            'Location': self.location,
+            'Submission Time': self.submission_time,
+            'Key': self.key
+        }
+        return status_dict
+    
     @property
     def key(self):
         return self.calculation.key
@@ -152,13 +183,6 @@ class SubmitJob(persistent.Persistent):
     @property
     def input_path(self):
         return os.path.join(self.directory, self.calculation.input_name)
-    
-    @property
-    def output_name(self):
-        if self.calculation.output_name:
-            return self.calculation.output_name
-        else:
-            return str(self.runname)+'.stdout'
     
     @property
     def output_path(self):
@@ -234,6 +258,8 @@ class SubmitJob(persistent.Persistent):
             if calculation_dict['output'].get('stdout_string'):
                 del calculation_dict['output']['stdout_string']
         dict_ = {
+            '@module': self.__class__.__module__,
+            '@class': self.__class__.__name__,
             'calculation': calculation_dict,
             'code': self.code,
             'walltime': self.walltime,
@@ -243,6 +269,16 @@ class SubmitJob(persistent.Persistent):
             'status': self.status,
             'location': self.location,
             'submission_time': self.submission_time,
-            'metadata': self.metadata
+            'metadata': self.metadata,
+            'directory': self.directory,
+            'output_name': self.output_name,
+            'input_name': self.input_name
         }
         return dict_
+    
+    @classmethod
+    def from_dict(cls, dict_):
+        decoded = {key: MontyDecoder().process_decoded(value)
+                   for key, value in dict_.items()
+                   if not key.startswith("@")}
+        return cls(**decoded)

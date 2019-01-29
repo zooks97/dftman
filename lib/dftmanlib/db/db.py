@@ -1,3 +1,8 @@
+from .. import base
+from ..job import SubmitJob
+
+import os.path
+
 import BTrees.OOBTree
 import transaction
 import ZODB
@@ -6,7 +11,7 @@ import ZODB.FileStorage
 
 def init(path='./db.fs'):
     if not os.path.exists(path):
-        root = load_db(path)
+        root = load(path)
         root.MPQueries = BTrees.OOBTree.BTree()
         root.Jobs = BTrees.OOBTree.BTree()
         root.Workflows = BTrees.OOBTree.BTree()
@@ -25,9 +30,14 @@ def load(path='./db.fs'):
 
 def store(object_, root, report=True, overwrite=False):
     if isinstance(object_, SubmitJob):
-        tree = root.SubmitJobs
+        tree = root.Jobs
+        name = 'Job'
+    elif isinstance(object_, base.Workflow):
+        tree = root.Workflows
+        name = 'Workflow'
     elif isinstance(object_, MPQuery):
         tree = root.MPQueries
+        name = 'MPQuery'
     else:
         raise ValueError('This is an unsupported object.'\
                          ' The database only accepts'\
@@ -40,14 +50,16 @@ def store(object_, root, report=True, overwrite=False):
     else:
         tree[key] = object_
         transaction.commit()
-        print('Added {} to the database'.format(key))
+        print('Added {} {} to the database'.format(name, key))
     return key
     
 def batch_store(objects, root, report=True, overwrite=False):
     trees = []
     for object_ in objects:
-        if isinstance(object_, SubmitJob):
-            tree = root.SubmitJobs
+        if isinstance(object_, base.Job):
+            tree = root.Jobs
+        elif isinstance(object_, base.Workflow):
+            tree = root.Workflows
         elif isinstance(object_, MPQuery):
             tree = root.MPQueries
         else:

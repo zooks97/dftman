@@ -68,6 +68,8 @@ class MPQuery(persistent.Persistent):
     
     def as_dict(self):
         dict_ = {
+            '@module': self.__class__.__module__,
+            '@class': self.__class__.__name__,
             'properties': self.properties,
             'criteria': self.criteria,
             'API': self.API,
@@ -77,4 +79,7 @@ class MPQuery(persistent.Persistent):
     
     @classmethod
     def from_dict(cls, dict_):
-        return cls(**dict_)
+        decoded = {key: MontyDecoder().process_decoded(value)
+                   for key, value in dict_.items()
+                   if not key.startswith("@")}
+        return cls(**decoded)

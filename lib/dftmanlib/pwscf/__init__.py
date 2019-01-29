@@ -1,7 +1,6 @@
 from .pwscf import (PWInput, PWOutput, PWCalculation,
                     pseudo_helper, pwinput_helper,
-                    pwcalculation_helper, sort_recursive,
-                    hash_dict)
+                    pwcalculation_helper)
 
 from . import workflow
 
