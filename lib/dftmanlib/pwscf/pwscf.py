@@ -36,12 +36,14 @@ class PWInput(persistent.Persistent, PWInputPMG):
         pw.x input
     :param control: dictionary of the parameters in the CONTROL card of pw.x
     :param system: dictionary of the parameters in the SYSTEM card of pw.x
-    :param electrons: dictionary of the parameters in the ELECTRONS card of pw.x
+    :param electrons: dictionary of the parameters in the ELECTRONS card of
+        pw.x
     :param ions: dictionary of the parameters in the IONS card of pw.x
     :param cell: dictionary of the parameters in the CELL card of pw.x
     :param kpoints_mode: string of the type of kpoints to be provided
     :param kpoints_grid: tuple of kpoints in the b1, b2, and b3 directions
-    :param kpoints_shift: tuple of kpoints offset along b1, b2, and b3 directions
+    :param kpoints_shift: tuple of kpoints offset along b1, b2, and b3
+        directions
     '''
 
     def __init__(self, **kwargs):
@@ -304,7 +306,8 @@ class PWOutput(persistent.Persistent):
     def general_error(self):
         text = ''.join(self._lines)
         if '%%%%%%%%%%%%%%' in text:
-            # warnings.warn('Something probably went very wrong, an error occurred.')
+            # warnings.warn('Something probably went very wrong,'\
+            #               ' an error occurred.')
             return True
         else:
             return False
@@ -326,7 +329,8 @@ class PWOutput(persistent.Persistent):
     def deprecated_feature_used(self):
         text = ''.join(self._lines)
         if 'DEPRECATED' in text:
-            # warnings.warn('You used a deprecated feature, try not to do that in the future.')
+            # warnings.warn('You used a deprecated feature, try not to do'\
+            #               ' that in the future.')
             return True
         else:
             return False
@@ -335,7 +339,8 @@ class PWOutput(persistent.Persistent):
     def incommensurate_fft_grid(self):
         text = ''.join(self._lines)
         if 'incommensurate with FFT grid' in text:
-            # warnings.warn('The FFT grid is incommensurate, so some symmetries may be lost.')
+            # warnings.warn('The FFT grid is incommensurate, so some'\
+            #               ' symmetries may be lost.')
             return True
         else:
             return False
@@ -343,8 +348,10 @@ class PWOutput(persistent.Persistent):
     @property
     def scf_correction_too_large(self):
         text = ''.join(self._lines)
-        if 'SCF correction compared to forces is too large, reduce conv_thr' in text:
-            # warnings.warn('The forces are inaccurate (SCF correction is too large): reduce conv_thr')
+        if 'SCF correction compared to forces is'\
+           ' too large, reduce conv_thr' in text:
+            # warnings.warn('The forces are inaccurate (SCF correction is'\
+            #               ' too large): reduce conv_thr')
             return True
         else:
             return False
@@ -409,14 +416,16 @@ class PWOutput(persistent.Persistent):
     def number_of_iterations_used(self):
         for line in self._lines:
             if 'number of iterations used' in line:
-                number_of_iterations_used = int(line.split('=')[-1].split()[0])
+                number_of_iterations_used = int(line.split('=')[-1]\
+                                                    .split()[0])
                 return number_of_iterations_used
     
     @property
     def exchange_correlation(self):
         for line in self._lines:
             if 'Exchange-correlation' in line:
-                exchange_correlation = line.split('=')[-1].split('(')[0].strip()
+                exchange_correlation = line.split('=')[-1].split('(')[0]\
+                                           .strip()
                 return exchange_correlation
     
     @property
@@ -468,7 +477,8 @@ class PWOutput(persistent.Persistent):
     @property
     def vdw_correction(self):
         for line in self._lines:
-            if 'Carrying out vdW-DF run using the following parameters:' in line:
+            if 'Carrying out vdW-DF run using the'\
+               ' following parameters:' in line:
                 vdw_correction = True
                 return vdw_correction
         vdw_correction = False
@@ -506,7 +516,8 @@ class PWOutput(persistent.Persistent):
     @property
     def initial_atomic_positions(self):
         for l, line in enumerate(self._lines):
-            if 'site n.     atom                  positions (cryst. coord.)' in line:
+            if 'site n.     atom                  positions'\
+               ' (cryst. coord.)' in line:
                 initial_atomic_positions = []
                 i = l + 1
                 while self._lines[i].strip():
@@ -524,9 +535,11 @@ class PWOutput(persistent.Persistent):
         initial_unit_cell = self.initial_unit_cell
         initial_atomic_positions = self.initial_atomic_positions
         if (initial_unit_cell and initial_atomic_positions):
-            species = [''.join([l for l in i[0] if not l.isdigit()]) for i in initial_atomic_positions]
+            species = [''.join([l for l in i[0] if not l.isdigit()])
+                       for i in initial_atomic_positions]
             positions = [j[1] for j in initial_atomic_positions]
-            initial_structure = Structure(initial_unit_cell, species, positions)
+            initial_structure = Structure(initial_unit_cell,
+                                          species, positions)
             return initial_structure.as_dict()
         else:
             return None
@@ -609,14 +622,17 @@ class PWOutput(persistent.Persistent):
             if 'volume' in fcs_text:
                 for l, line in enumerate(self.final_coordinates_section):
                     if 'Begin final coordinates' in line:
-                        # final_volume_bohr = float(self.final_coordinates_section[l+1].split()[-6])
-                        final_volume_angstrom = float(self.final_coordinates_section[l+1].split()[-3])
+                        # final_volume_bohr = \
+                        # float(self.final_coordinates_section[l+1].split()[-6])
+                        final_volume_angstrom = \
+                        float(self.final_coordinates_section[l+1].split()[-3])
                         return final_volume_angstrom
             else:
                 return None
         else:
             # NEW
-            # warnings.warn('{} has no FINAL volume. Returning LAST volume.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL volume.'\
+            #               ' Returning LAST volume.'.format(self.stdout_path))
             reversed__lines = list(reversed(self._lines))
             for l, line in enumerate(reversed__lines):
                 if 'new unit-cell volume' in line:
@@ -637,7 +653,8 @@ class PWOutput(persistent.Persistent):
                         while self.final_coordinates_section[i].strip():
                             tmp_line = self.final_coordinates_section[i]
                             # Angstrom
-                            final_unit_cell.append([float(j) for j in   tmp_line.strip().split()])
+                            final_unit_cell.append([float(j) 
+                                for j in tmp_line.strip().split()])
                             i += 1
                         i += 1
                         return final_unit_cell
@@ -645,7 +662,8 @@ class PWOutput(persistent.Persistent):
                 return None
         else:
             # NEW
-            # warnings.warn('{} has no FINAL unit cell. Returning LAST unit cell.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL unit cell.'\
+            # ' Returning LAST unit cell.'.format(self.stdout_path))
             reversed__lines = list(reversed(self._lines))
             for l, line in enumerate(reversed__lines):
                 if 'CELL_PARAMETERS' in line:
@@ -671,7 +689,8 @@ class PWOutput(persistent.Persistent):
                             tmp = self.final_coordinates_section[i].strip().split()
                             species = tmp.pop(0)
                             position = tmp
-                            position = [float(j) for j in position]  # crystal (fractional) coords.
+                            # crystal (fractional) coords.
+                            position = [float(j) for j in position]
                             final_atomic_positions.append((species, position))
                             i += 1
                         return final_atomic_positions
@@ -679,7 +698,8 @@ class PWOutput(persistent.Persistent):
                 return None
         else:
             # NEW
-            # warnings.warn('{} has no FINAL atomic positions. Returning LAST atomic positions.'.format(self.stdout_path))
+            # warnings.warn('{} has no FINAL atomic positions.'\
+            # ' Returning LAST atomic positions.'.format(self.stdout_path))
             reversed__lines = list(reversed(self._lines))
             for l, line in enumerate(reversed__lines):
                 if 'ATOMIC_POSITIONS' in line:
@@ -700,7 +720,8 @@ class PWOutput(persistent.Persistent):
         final_unit_cell = self.final_unit_cell
         final_atomic_positions = self.final_atomic_positions
         if (final_unit_cell and final_atomic_positions):
-            species = [''.join([l for l in i[0] if not l.isdigit()]) for i in final_atomic_positions]
+            species = [''.join([l for l in i[0] if not l.isdigit()])
+                                for i in final_atomic_positions]
             positions = [j[1] for j in final_atomic_positions]
             final_structure = Structure(final_unit_cell, species, positions)
             return final_structure.as_dict()
@@ -842,7 +863,8 @@ class PWOutput(persistent.Persistent):
                 else:
                     time.append(0)
                 converter = [60**2, 60, 1]
-                total_seconds = sum([t * converter[i] for i, t in enumerate(time)])
+                total_seconds = sum([t * converter[i]
+                                     for i, t in enumerate(time)])
                 return total_seconds
         return None
 
@@ -897,7 +919,8 @@ class PWOutput(persistent.Persistent):
                 'final_pressure_tensor': self.final_pressure_tensor,
                 'final_total_energy': self.final_total_energy,
                 'final_enthalpy': self.final_enthalpy,
-                'final_absolute_magnetization': self.final_absolute_magnetization,
+                'final_absolute_magnetization': \
+                    self.final_absolute_magnetization,
                 'final_fermi_energy': self.final_fermi_energy,
                 'final_energy': self.final_energy,
                 # 'walltime': self.walltime,           
@@ -941,7 +964,8 @@ def pseudo_helper(structure, pseudo_family, pseudo_table_path):
     pseudo_family_table = pseudo_table[pseudo_family]
     
     species = {site.specie.symbol for site in structure.sites}
-    pseudos = {specie: pseudo_family_table[specie]['path'] for specie in species}
+    pseudos = {specie: pseudo_family_table[specie]['path']
+               for specie in species}
    
     return pseudos
 

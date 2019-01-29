@@ -15,7 +15,8 @@ import transaction
 
 from .job import JOBS_DIRECTORY
 
-# TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence of SubmitJob
+# TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence
+#           of SubmitJob
 # TODO: rename all pw.x classes => PwClassName instead of PWClassName
 
 class SubmitJob(base.Job):
@@ -63,7 +64,8 @@ class SubmitJob(base.Job):
             self.directory = os.path.join(directory, self.key)
         else:
             self.directory = os.path.join(JOBS_DIRECTORY,
-                                          '{}_{}'.format(self.runname, self.key))
+                                          '{}_{}'.format(self.runname,
+                                                         self.key))
             
         self.input_name = self.calculation.input_name
         self.output_name = str(self.runname)+'.stdout'
@@ -93,7 +95,8 @@ class SubmitJob(base.Job):
         stdout = process.stdout.peek().decode('utf-8')
         stderr = process.stderr.peek().decode('utf-8')
         
-        id_re = re.compile(r'Check run status with the command: submit --status (\d+)')
+        id_re = re.compile(r'Check run status with the command: submit'\
+                            ' --status (\d+)')
         id_match = re.search(id_re, stdout)
         
         try:
@@ -142,7 +145,8 @@ class SubmitJob(base.Job):
                     self.location = location
                 else:
                     for line in stdout_lines[1:]:
-                        runname, id_, instance, status, location = info_line.split()
+                        runname, id_, instance, status, location = \
+                            info_line.split()
                         if runname == self.runname:
                             self.id = id_
                             self.status = status
@@ -282,3 +286,4 @@ class SubmitJob(base.Job):
                    for key, value in dict_.items()
                    if not key.startswith("@")}
         return cls(**decoded)
+
