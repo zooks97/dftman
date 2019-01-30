@@ -53,11 +53,11 @@ class SubmitJob(Mapping, base.Job):
         self.walltime = walltime
         self.metadata = metadata
         
-        self.submit_id = None
-        self.status = None
-        self.location = None
-        self.submission_time = None
-        self.run = False
+        self.submit_id = submit_id
+        self.status = status
+        self.location = location
+        self.submission_time = submission_time
+        self.run = run
         self.process = None
         self.doc_id = doc_id
         
