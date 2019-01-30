@@ -4,9 +4,6 @@ import os.path
 import numpy as np
 import pandas as pd
 
-import persistent
-import transaction
-
 from pymatgen import Structure
 from pymatgen.analysis.eos import EOS
 
@@ -38,44 +35,17 @@ class EOSWorkflow(base.Workflow):
         self.stored = False
         self.jobs_stored = False
     
-    def store(self):
-#         if not self.stored:
-#             db.store(self, self.root)
-#             self.stored = True
-#             transaction.commit()
-#         else:
-#             print('Already stored!')
-        self.stored = True, 
-    
-#     def store_jobs(self, jobs):
-#         if not self.jobs_stored:
-#             for job in jobs:
-#                 db.store(job, self.root)
-#                 transaction.commit()
-#             self.jobs_stored = True
-#         else:
-#             print('Already stored!')
-    
     def run(self):
         jobs = self.get_jobs()
-        
         for job in jobs:
-            db.store(job, root)
             job.submit()
         self.jobs_stored = True
-            
-        if not self.stored:
-            db.store(self, root)
-            transaction.commit()
-            self.stored = True
-            
         return
         
-    def check_status(self, commit_transaction=True):
+    def check_status(self):
         statuses = []
         for job in self.get_jobs():
             statuses.append(job.check_status())
-            transaction.commit()
         return pd.DataFrame(statuses) 
     
     def make_jobs(self):
@@ -146,10 +116,12 @@ class EOSWorkflow(base.Workflow):
         return eos_fits
             
     def as_dict(self):
-        
+        pass 
         
     @classmethod
     def from_dict(cls, dict_):
+        if dict_['id']:
+            del dict_['id']
         decoded = {key: MontyDecoder().process_decoded(value)
                    for key, value in dict_.items()
                    if not key.startswith("@")}

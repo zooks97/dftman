@@ -9,9 +9,9 @@ import os
 import os.path
 import pprint
 import shutil
+import json
 
-import persistent
-import transaction
+from monty.json import MontyEncoder, MontyDecoder
 
 from .job import JOBS_DIRECTORY
 
@@ -34,21 +34,27 @@ class SubmitJob(base.Job):
     :param submission_time:
     :param run:
     '''
+    
+    
     def __init__(self, calculation, code,
                  walltime='01:00:00', ncpus=1,
                  runname=None, directory=None,
-                 metadata=None):
+                 metadata=None, submit_id=None,
+                 status=None, location=None,
+                 submission_time=None, run=False,
+                 **kwargs):
         self.calculation = calculation
         self.code = code
         self.walltime = walltime
         self.metadata = metadata
         
-        self.id = None
+        self.submit_id = None
         self.status = None
         self.location = None
         self.submission_time = None
         self.run = False
-        self.process = None  
+        self.process = None
+        self.doc_id = None
         
         if ncpus > 0 and ncpus <= 20:
             self.ncpus = ncpus
@@ -69,15 +75,28 @@ class SubmitJob(base.Job):
             
         self.input_name = self.calculation.input_name
         self.output_name = str(self.runname)+'.stdout'
+
     
     def __repr__(self):
         return pprint.pformat(self.as_dict())
 
+
+    def insert(self, db):
+        table = db.table(self.__class__.__name__)
+        self.doc_id = table.insert(self)
+        print('Inserted Job {} into database with doc_id {}'
+              .format(self.key, self.doc_id))
+        return self.doc_id
+    
     
     def submit(self, report=True, block_if_run=True,
-               commit_transaction=True):
+               require_doc_id=True):
         if block_if_run and self.run:
-            print('Already run, not submitting')
+            print('Already run, not submitting.')
+            return
+        elif require_doc_id and not self.doc_id:
+            print('Job must be inserted into the database first,'\
+                  ' not submitting.')
             return
         else:
             if not os.path.exists(self.directory):
@@ -100,7 +119,7 @@ class SubmitJob(base.Job):
         id_match = re.search(id_re, stdout)
         
         try:
-            self.id = int(id_match.group(1))
+            self.submit_id = int(id_match.group(1))
         except:
             raise ValueError('Could not find id. Didn\'t submit?')
         
@@ -109,31 +128,32 @@ class SubmitJob(base.Job):
         
         print('Submitted job {} {}'.format(self.runname, self.key))
         
-        if commit_transaction:
-            transaction.commit()
+        self.doc_id = self.upsert()
 
         return
     
+    
     def attach(self):
-        process = subprocess.Popen(['submit', '--attach', str(self.id)],
+        process = subprocess.Popen(['submit', '--attach', str(self.submit_id)],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         return process
     
-    def kill(self, clean=True, commit_transaction=True):
-        process = subprocess.run(['submit', '--kill', str(self.id)])
+    
+    def kill(self, clean=True):
+        process = subprocess.run(['submit', '--kill', str(self.submit_id)])
         self.status = 'Killed'
         if clean:
             shutil.rmtree(self.directory)
-        if commit_transaction:
-            transaction.commit()
+        self.doc_id = self.upsert()
     
-    def check_status(self, commit_transaction=True):
+    
+    def check_status(self):
         if self.status == 'Complete':
             return self.status_dict
         
         stdout = subprocess.check_output(['submit', '--status',
-                                          str(self.id)]).decode('utf-8')
+                                          str(self.submit_id)]).decode('utf-8')
         if stdout and self.runname in stdout:
             stdout_lines = stdout.strip().split('\n')
             if len(stdout_lines) > 1:
@@ -148,7 +168,7 @@ class SubmitJob(base.Job):
                         runname, id_, instance, status, location = \
                             info_line.split()
                         if runname == self.runname:
-                            self.id = id_
+                            self.submit_id = id_
                             self.status = status
                             self.location = location
             else:
@@ -159,20 +179,27 @@ class SubmitJob(base.Job):
             if os.path.exists(self.output_path):
                 self.status = 'Complete'
                 self.attach()
-        if commit_transaction:
-            transaction.commit()
             
+        self.doc_id = self.upsert()
+        
         return self.status_dict
+    
+    
+    def write_input(self):
+        return self.calculation.write_input(name=self.input_name,
+                                            directory=self.directory)
+    
     
     def parse_output(self):
         return self.calculation.parse_output(name=self.output_name,
                                              directory=self.directory)
     
+    
     @property
     def status_dict(self):
         status_dict = {
             'Status': self.status,
-            'ID': self.id,
+            'ID': self.submit_id,
             'Run Name': self.runname,
             'Location': self.location,
             'Submission Time': self.submission_time,
@@ -180,23 +207,27 @@ class SubmitJob(base.Job):
         }
         return status_dict
     
+    
     @property
     def key(self):
         return self.calculation.key
+      
         
     @property
     def input_path(self):
         return os.path.join(self.directory, self.calculation.input_name)
+    
     
     @property
     def output_path(self):
             return os.path.join(self.directory,
                                 self.output_name)
 
+
     @property
     def stdout(self):
         stdout_path = os.path.join(self.calculation.directory,
-                                   str(self.id)+'.stdout')
+                                   str(self.submit_id)+'.stdout')
         if os.path.exists(stdout_path):
             with open(stdout_path, 'r') as f:
                 stdout = f.read()
@@ -204,10 +235,11 @@ class SubmitJob(base.Job):
             stdout = None
         return stdout
     
+    
     @property
     def stderr(self):
         stderr_path = os.path.join(self.calculation.directory,
-                                   str(self.id)+'.stdout')
+                                   str(self.submit_id)+'.stdout')
         if os.path.exists(stderr_path):
             with open(stderr_path, 'r') as f:
                 stderr = f.read()
@@ -215,13 +247,16 @@ class SubmitJob(base.Job):
             stderr = None
         return stderr
     
+    
     @property
     def input(self):
         return self.calculation.input
     
+    
     @property
     def output(self):
         return self.calculation.output
+    
     
     @property
     def command(self):
@@ -252,9 +287,11 @@ class SubmitJob(base.Job):
         command = base_command.format(**submit_data)
         return command
     
+    
     def _walltime_to_seconds(walltime):
         ftr = [3600,60,1]
         return sum([a*b for a,b in zip(ftr, map(int,walltime.split(':')))])
+    
     
     def as_dict(self):
         calculation_dict = self.calculation.as_dict()
@@ -264,21 +301,24 @@ class SubmitJob(base.Job):
         dict_ = {
             '@module': self.__class__.__module__,
             '@class': self.__class__.__name__,
-            'calculation': calculation_dict,
+            'calculation': self.calculation.as_dict(),
             'code': self.code,
             'walltime': self.walltime,
             'ncpus': self.ncpus,
             'runname': self.runname,
-            'id': self.id,
+            'submit_id': self.submit_id,
             'status': self.status,
             'location': self.location,
             'submission_time': self.submission_time,
             'metadata': self.metadata,
             'directory': self.directory,
-            'output_name': self.output_name,
-            'input_name': self.input_name
         }
         return dict_
+    
+        
+    def to_json(self):
+        return json.dumps(self, cls=MontyEncoder)
+    
     
     @classmethod
     def from_dict(cls, dict_):

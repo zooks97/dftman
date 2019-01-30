@@ -1,83 +1,366 @@
 from .. import base
 from ..job import SubmitJob
+from ..pwscf import PWInput, PWOutput, PWCalculation
+from ..pwscf.workflow import EOSWorkflow
 
 import os.path
+import codecs
+import json
+import warnings
 
-import BTrees.OOBTree
-import transaction
-import ZODB
-import ZODB.FileStorage
+from collections.abc import Mapping
 
+import tinydb
+from tinydb import TinyDB, Query, Storage, JSONStorage
+from tinydb.database import Table, _get_doc_id, _get_doc_ids
+from tinydb.utils import itervalues
 
-def init(path='./db.fs'):
+from monty.json import MontyEncoder, MontyDecoder
+
+DB_PATH = 'db.tinydb'
+
+def init_db(path=DB_PATH, default_table='Job'):
     if not os.path.exists(path):
-        root = load(path)
-        root.MPQueries = BTrees.OOBTree.BTree()
-        root.Jobs = BTrees.OOBTree.BTree()
-        root.Workflows = BTrees.OOBTree.BTree()
-        transaction.commit()
+        db = DFTmanDB(path, default_table='Job',
+                      storage=MSONStorage, table_class=DFTmanTable) 
     else:
-        print('This database already exists! Loading instead.')
-        root = load(path)
-    return root
+        raise FileExistsError('{} already exists, loading.')
+        db = DFTmanDB(path)
+    return db
 
-def load(path='./db.fs'):
-    storage = ZODB.FileStorage.FileStorage('db.fs')
-    db = ZODB.DB(storage)
-    connection = db.open()
-    root = connection.root
-    return root
+def load_db(path=DB_PATH, init=True):
+    if os.path.exists(path):
+        return DFTmanDB(path, default_table='Job',
+                        storage=JSONStorage, table_class=DFTmanTable)
+    elif init:
+        return init_db()
+    else:
+        raise FileNotFoundError('{} does not exist.')
 
-def store(object_, root, report=True, overwrite=False):
-    if isinstance(object_, SubmitJob):
-        tree = root.Jobs
-        name = 'Job'
-    elif isinstance(object_, base.Workflow):
-        tree = root.Workflows
-        name = 'Workflow'
-    elif isinstance(object_, MPQuery):
-        tree = root.MPQueries
-        name = 'MPQuery'
-    else:
-        raise ValueError('This is an unsupported object.'\
-                         ' The database only accepts'\
-                         ' SubmitJob and MPQuery.')
-    key = object_.key
-    if not overwrite and key in list(tree.keys()):
-        raise ValueError('This key already exists!'\
-                         ' Use the overwrite argument to'
-                         ' overwrite the entry.')
-    else:
-        tree[key] = object_
-        transaction.commit()
-        print('Added {} {} to the database'.format(name, key))
-    return key
-    
-def batch_store(objects, root, report=True, overwrite=False):
-    trees = []
-    for object_ in objects:
-        if isinstance(object_, base.Job):
-            tree = root.Jobs
-        elif isinstance(object_, base.Workflow):
-            tree = root.Workflows
-        elif isinstance(object_, MPQuery):
-            tree = root.MPQueries
+def touch(fname, create_dirs):
+    if create_dirs:
+        base_dir = os.path.dirname(fname)
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir)
+
+    if not os.path.exists(fname):
+        with open(fname, 'a'):
+            os.utime(fname, None)
+                
+
+class MSONStorage(Storage):
+    """
+    Store the data in a MSON file.
+    """
+
+    def __init__(self, path, create_dirs=False, encoding=None, **kwargs):
+        """
+        Create a new instance.
+        Also creates the storage file, if it doesn't exist.
+        :param path: Where to store the MSON data.
+        :type path: str
+        """
+
+        super(MSONStorage, self).__init__()
+        touch(path, create_dirs=create_dirs)  # Create file if not exists
+        self.kwargs = kwargs
+        self._handle = codecs.open(path, 'r+', encoding=encoding)
+
+    def close(self):
+        self._handle.close()
+
+    def read(self):
+        # Get the file size
+        self._handle.seek(0, os.SEEK_END)
+        size = self._handle.tell()
+
+        if not size:
+            # File is empty
+            return None
         else:
-            raise ValueError('This is an unsupported object.'\
-                             ' The database only accepts'\
-                             ' SubmitJob and MPQuery.')
-        trees.append(tree)
-    
-    keys = [object_.key for object_ in objects]
-    if len(set(keys)) != len(keys):
-        raise ValueError('One or more of these are duplicates!')
+            self._handle.seek(0)
+            return json.load(self._handle)
+
+    def write(self, data):
+        self._handle.seek(0)
+        serialized = json.dumps(data, cls=MontyEncoder, **self.kwargs)
+        self._handle.write(serialized)
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+        self._handle.truncate()
+
+
+class DFTmanDB(TinyDB):
         
-    for tree, key, object_ in zip(trees, keys, objects):
-        if key in list(tree.keys()):
-            raise ValueError('{} is already in {}'.format(key, tree))
+    def insert(self, msonable):
+        """
+        Insert a new document into the table.
+
+        :param document: the document to insert
+        :returns: the inserted document's ID
+        """
+        
+        document = msonable.as_dict()
+        
+        doc_id = self._get_doc_id(document)
+        data = self._read()
+        data[doc_id] = dict(document)
+        self._write(data)
+
+        return doc_id
+        
+    def insert_multiple(self, msonables):
+        """
+        Insert multiple documents into the table.
+
+        :param documents: a list of documents to insert
+        :returns: a list containing the inserted documents' IDs
+        """
+
+        documents = [msonable.as_dict() for msonable in msonables]
+        
+        doc_ids = []
+        data = self._read()
+
+        for doc in documents:
+            doc_id = self._get_doc_id(doc)
+            doc_ids.append(doc_id)
+
+            data[doc_id] = dict(doc)
+
+        self._write(data)
+
+        return doc_ids
+        
+    def write_back(self, msonable, doc_ids=None, eids=None):
+        """
+        Write back documents by doc_id
+
+        :param documents: a list of document to write back
+        :param doc_ids: a list of document IDs which need to be written back
+        :returns: a list of document IDs that have been written
+        """
+        
+        documents = [msonable.as_dict() for msonable in msonables]
+        
+        doc_ids = _get_doc_ids(doc_ids, eids)
+
+        if doc_ids is not None and not len(documents) == len(doc_ids):
+            raise ValueError(
+                'The length of documents and doc_ids is not match.')
+
+        if doc_ids is None:
+            doc_ids = [doc.doc_id for doc in documents]
+
+        # Since this function will write docs back like inserting, to ensure
+        # here only process existing or removed instead of inserting new,
+        # raise error if doc_id exceeded the last.
+        if len(doc_ids) > 0 and max(doc_ids) > self._last_id:
+            raise IndexError(
+                'ID exceeds table length, use existing or removed doc_id.')
+
+        data = self._read()
+
+        # Document specified by ID
+        documents.reverse()
+        for doc_id in doc_ids:
+            data[doc_id] = dict(documents.pop())
+
+        self._write(data)
+
+        return doc_ids
+
+    def upsert(self, msonable):
+        """
+        Update a document, if it exist - insert it otherwise.
+
+        Note: this will update *all* documents matching the query.
+
+        :param document: the document to insert or the fields to update
+        :param cond: which document to look for
+        :returns: a list containing the updated document's ID
+        """
+        
+        document = msonable.as_dict()
+        
+        updated_docs = self.update(document, cond)
+
+        if updated_docs:
+            return updated_docs
         else:
-            tree[key] = object_
-    
-    transaction.commit()
-    
-    return keys
+            return [self.insert(document)]
+            
+    def get(self, cond=None, doc_id=None, eid=None):
+        """
+        Get exactly one document specified by a query or and ID.
+
+        Returns ``None`` if the document doesn't exist
+
+        :param cond: the condition to check against
+        :type cond: Query
+
+        :param doc_id: the document's ID
+
+        :returns: the document or None
+        :rtype: Element | None
+        """
+        doc_id = _get_doc_id(doc_id, eid)
+
+        # Cannot use process_elements here because we want to return a
+        # specific document
+
+        if doc_id is not None:
+            # Document specified by ID
+            doc = self._read().get(doc_id, None)
+            msonable = MontyDecoder().process_decoded(dict(doc))
+            return msonable
+
+        # Document specified by condition
+        for doc in self.all():
+            if cond(doc):
+                msonable = MontyDecoder().process_decoded(dict(doc))
+                return msonable
+
+
+class DFTmanTable(Table):
+
+    def all(self):
+        """
+        Get all documents stored in the table.
+
+        :returns: a list with all documents.
+        :rtype: list[Element]
+        """
+        docs = list(itervalues(self._read()))
+        msonables = [MontyDecoder().process_decoded(doc) for doc in docs]
+        return msonables
+        
+    def insert(self, msonable):
+        """
+        Insert a new document into the table.
+
+        :param document: the document to insert
+        :returns: the inserted document's ID
+        """
+        
+        document = msonable.as_dict()
+
+        doc_id = self._get_doc_id(document)
+        data = self._read()
+        data[doc_id] = dict(document)
+        self._write(data)
+
+        return doc_id
+
+    def insert_multiple(self, msonables):
+        """
+        Insert multiple documents into the table.
+
+        :param documents: a list of documents to insert
+        :returns: a list containing the inserted documents' IDs
+        """
+
+        documents = [msonable.as_dict() for msonable in msonables]
+
+        doc_ids = []
+        data = self._read()
+
+        for doc in documents:
+            doc_id = self._get_doc_id(doc)
+            doc_ids.append(doc_id)
+
+            data[doc_id] = dict(doc)
+
+        self._write(data)
+
+        return doc_ids
+        
+    def write_back(self, msonables, doc_ids=None, eids=None):
+        """
+        Write back documents by doc_id
+
+        :param documents: a list of document to write back
+        :param doc_ids: a list of document IDs which need to be written back
+        :returns: a list of document IDs that have been written
+        """
+        
+        documents = [msonable.as_dict() for msonable in msonables]
+        
+        doc_ids = _get_doc_ids(doc_ids, eids)
+
+        if doc_ids is not None and not len(documents) == len(doc_ids):
+            raise ValueError(
+                'The length of documents and doc_ids is not match.')
+
+        if doc_ids is None:
+            doc_ids = [doc.doc_id for doc in documents]
+
+        # Since this function will write docs back like inserting, to ensure
+        # here only process existing or removed instead of inserting new,
+        # raise error if doc_id exceeded the last.
+        if len(doc_ids) > 0 and max(doc_ids) > self._last_id:
+            raise IndexError(
+                'ID exceeds table length, use existing or removed doc_id.')
+
+        data = self._read()
+
+        # Document specified by ID
+        documents.reverse()
+        for doc_id in doc_ids:
+            data[doc_id] = dict(documents.pop())
+
+        self._write(data)
+
+        return doc_ids
+
+    def upsert(self, msonable, cond):
+        """
+        Update a document, if it exist - insert it otherwise.
+
+        Note: this will update *all* documents matching the query.
+
+        :param document: the document to insert or the fields to update
+        :param cond: which document to look for
+        :returns: a list containing the updated document's ID
+        """
+        
+        document = msonable.as_dict()
+        
+        updated_docs = self.update(document, cond)
+
+        if updated_docs:
+            return updated_docs
+        else:
+            return [self.insert(document)]
+            
+    def get(self, cond=None, doc_id=None, eid=None):
+        """
+        Get exactly one document specified by a query or and ID.
+
+        Returns ``None`` if the document doesn't exist
+
+        :param cond: the condition to check against
+        :type cond: Query
+
+        :param doc_id: the document's ID
+
+        :returns: the document or None
+        :rtype: Element | None
+        """
+        doc_id = _get_doc_id(doc_id, eid)
+
+        # Cannot use process_elements here because we want to return a
+        # specific document
+
+        if doc_id is not None:
+            # Document specified by ID
+            doc = self._read().get(doc_id, None)
+            msonable = MontyDecoder().process_decoded(dict(doc))
+            return msonable
+
+        # Document specified by condition
+        for doc in self.all():
+            if cond(doc):
+                msonable = MontyDecoder().process_decoded(dict(doc))
+                return msonable
+

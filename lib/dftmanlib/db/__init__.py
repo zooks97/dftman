@@ -1,3 +1,3 @@
-from .db import (init, load, store, batch_store)
+from .db import (init_db, load_db)
 
-__all__ = ['init', 'load', 'store', 'batch_store']
+__all__ = ['init_db', 'load_db']

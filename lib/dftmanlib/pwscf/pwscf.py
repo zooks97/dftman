@@ -9,22 +9,22 @@ import copy
 
 from collections import OrderedDict
 
-import persistent
-import transaction
 
 import pandas as pd
 
 from pymatgen import Structure
-from pymatgen.io.pwscf import PWInput as PWInputPMG
+from pymatgen.io.pwscf import PWInput as PymatgenPWInput
 
-from ..base import hash_dict
+from monty.json import (MontyEncoder, MontyDecoder)
+
+from .. import base
 
 A_PER_BOHR = 0.52917720859
 A3_PER_BOHR3 = A_PER_BOHR ** 3
 EV_PER_RY = 13.6056917253
 
 
-class PWInput(persistent.Persistent, PWInputPMG):
+class PWInput(PymatgenPWInput):
     '''
     Subclass of pymatgen's PWInput which adds:
         * PWInput.as_dict() for storing a PWInput object as a dictionary
@@ -47,26 +47,34 @@ class PWInput(persistent.Persistent, PWInputPMG):
     '''
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(PWInput, self).__init__(**kwargs)
+        
+    def __repr__(self):
+        return pprint.pformat(self.as_dict())
     
     @property
     def key(self):
-        return hash_dict(self.as_dict())
+        return base.hash_dict(self.as_dict())
     
     def write_input(self, filename):
         self.write_file(filename)
         
-    def as_dict(cls):
+    def as_dict(self):
         dict_ = {
             '@module': self.__class__.__module__, 
             '@class': self.__class__.__name__,
             'structure': self.structure.as_dict(),
             'pseudo': self.pseudo,
-            'sections': self.sections,
+            'control': self.sections.get('control'),
+            'system': self.sections.get('system'),
+            'electrons': self.sections.get('electrons'),
+            'ions': self.sections.get('ions'),
+            'cell': self.sections.get('cell'),
             'kpoints_mode': self.kpoints_mode,
             'kpoints_grid': self.kpoints_grid,
-            'kpoints_shift': self.kpoints_shift\
+            'kpoints_shift': self.kpoints_shift
         }
+        return dict_
         
     @classmethod
     def from_dict(cls, dict_):
@@ -76,7 +84,7 @@ class PWInput(persistent.Persistent, PWInputPMG):
         return cls(**decoded)
 
         
-class PWCalculation(persistent.Persistent):
+class PWCalculation(base.Calculation):
     '''
     Data and information necessary to run a pw.x calculation
     :param input: PWInput object
@@ -92,14 +100,14 @@ class PWCalculation(persistent.Persistent):
     '''
     def __init__(self, input_, output=None,
                  input_name=None, directory='./',
-                 additional_inputs=None, output_type=None):
-        self.input = input_
-        self.output = output
-        self.input_name = input_name
-        self.output_name = None
+                 additional_inputs=None,
+                 output_type=None):
+        self._input = input_
+        self._output = output
+        self._input_name = input_name
+        self._output_name = None
         self.output_type = output_type
-        self.directory = directory
-        self._output_dict = None
+        self._directory = directory
         
         prefix = self.input.sections['control'].get('prefix')
         if not self.input_name:
@@ -108,10 +116,55 @@ class PWCalculation(persistent.Persistent):
         return
 
     def __repr__(self):
-        dict_ = self.as_dict()
-        del dict_['output']['stdout_string']
-        print(dict_['output'].keys())
+        dict_ = {
+            'input': self.input.as_dict(),
+            'output': self.output.output_dict,
+            'input_name': self.input_name,
+            'output_name': self.output_name,
+            'output_type': self.output_type,
+            'directory': self.directory
+        }
         return pprint.pformat(dict_)
+        
+    @property
+    def directory(self):
+        return self._directory
+        
+    @directory.setter
+    def directory(self, value):
+        self._directory = value
+        
+    @property
+    def input(self):
+        return self._input
+        
+    @input.setter
+    def input(self, value):
+        self._input = value
+        
+    @property
+    def output(self):
+        return self._output
+        
+    @output.setter
+    def output(self, value):
+        self._output = value
+        
+    @property
+    def input_name(self):
+        return self._input_name
+        
+    @input_name.setter
+    def input_name(self, value):
+        self._input_name = value
+    
+    @property
+    def output_name(self):
+        return self._output_name
+        
+    @output_name.setter
+    def output_name(self, value):
+        self._output_name = value
     
     @property
     def key(self):
@@ -176,13 +229,12 @@ class PWCalculation(persistent.Persistent):
         dict_ = {
             '@module': self.__class__.__module__,
             '@class': self.__class__.__name__,
-            'additional_inputs': self.additional_inputs,
-            'directory': self.directory,
+            'input_': self.input.as_dict(),
+            'output': self.output.as_dict(),
             'input_name': self.input_name,
-            'input': self.input.as_dict(),
-            'output_name': self.output_name,
+            'directory': self.directory,
+            'additional_inputs': self.additional_inputs,
             'output_type': self.output_type,
-            'output': self.output.output_dict
         }
         return dict_
 
@@ -193,10 +245,8 @@ class PWCalculation(persistent.Persistent):
                    if not key.startswith("@")}
         return cls(**decoded)
         
-
-
         
-class PWOutput(persistent.Persistent):
+class PWOutput(base.Output):
     '''
     Class which parses pw.x standard output into useful physical and 
         simulation properties
@@ -209,6 +259,7 @@ class PWOutput(persistent.Persistent):
         self._path = path
         self._string = string
         self._lines = string.split('\n')
+        self._output_dict = None
         return
 
     def __repr__(self):
@@ -219,13 +270,19 @@ class PWOutput(persistent.Persistent):
         return self._string
     
     @string.setter
-    def string(self, value, commit_transaction=True):
+    def string(self, value):
         if isinstance(value, str):
             self._string = value
-            if commit_transaction:
-                transaction.commit()
         else:
             raise ValueError('String must be type str')
+            
+    @property
+    def path(self):
+        return self._path
+        
+    @path.setter
+    def path(self, value):
+        self._path = value
     
     @property
     def lines(self):
@@ -238,8 +295,6 @@ class PWOutput(persistent.Persistent):
     def lines(self, value):
         if isinstance(lines, list):
             self._lines = value
-            if commit_transaction:
-                transaction.commit()
         else:
             raise ValueError('Lines must be type list')
 
@@ -671,7 +726,8 @@ class PWOutput(persistent.Persistent):
                     final_unit_cell = []
                     while reversed__lines[i].strip():
                         tmp_line = reversed__lines[i]
-                        final_unit_cell.append([float(j) for j in tmp_line.strip().split()])
+                        final_unit_cell.append([float(j)for j\
+                            in tmp_line.strip().split()])
                         i -= 1
                     return final_unit_cell
             return None
@@ -685,8 +741,10 @@ class PWOutput(persistent.Persistent):
                     if 'ATOMIC_POSITIONS' in line:
                         i = l+1
                         final_atomic_positions = []
-                        while 'End final coordinates' not in self.final_coordinates_section[i]:
-                            tmp = self.final_coordinates_section[i].strip().split()
+                        while 'End final coordinates' not in\
+                            self.final_coordinates_section[i]:
+                            tmp = self.final_coordinates_section[i].\
+                                strip().split()
                             species = tmp.pop(0)
                             position = tmp
                             # crystal (fractional) coords.
@@ -872,6 +930,9 @@ class PWOutput(persistent.Persistent):
 
 
     ## CONVENIENCE AND STORAGE ##
+    def parse_output(self):
+        return self.output_dict
+        
     @property
     def output_dict(self):
         if not self._output_dict:
@@ -937,12 +998,8 @@ class PWOutput(persistent.Persistent):
         dict_ = {
             '@module': self.__class__.__module__,
             '@class': self.__class__.__name__,
-            'input_': self.input,
-            'output': self.output,
-            'input_name': self.input_name,
-            'directory': self.directory,
-            'additional_inputs': self.additional_inputs,
-            'output_type' = self.output_type
+            'string': self.string,
+            'path': self.path
         }
         return dict_
         

@@ -8,12 +8,30 @@ class Input(ABC):
     def write_input(self):
         pass
 
+    @abstractmethod
+    def as_dict(self):
+        pass
+    
+    @abstractclassmethod
+    def from_dict(cls, dict_):
+        pass
+
+
 class Output(ABC):
     
     @property
     @abstractmethod
     def parse_output(self):
         pass
+
+    @abstractmethod
+    def as_dict(self):
+        pass
+    
+    @abstractclassmethod
+    def from_dict(cls, dict_):
+        pass
+
 
 class Calculation(ABC):
     
@@ -49,6 +67,15 @@ class Calculation(ABC):
     @abstractmethod
     def output_name(self):
         pass
+        
+    @abstractmethod
+    def as_dict(self):
+        pass
+    
+    @abstractclassmethod
+    def from_dict(cls, dict_):
+        pass
+
 
 class Job(ABC):
     
@@ -98,6 +125,13 @@ class Job(ABC):
     def output(self):
         pass
     
+    @abstractmethod
+    def as_dict(self):
+        pass
+    
+    @abstractclassmethod
+    def from_dict(cls, dict_):
+        pass
     
 
 class Workflow(ABC):
@@ -121,3 +155,10 @@ class Workflow(ABC):
     def output(self):
         pass
     
+    @abstractmethod
+    def as_dict(self):
+        pass
+    
+    @abstractclassmethod
+    def from_dict(cls, dict_):
+        pass

@@ -1,14 +1,14 @@
 import tabulate
+import json
 
-import persistent
-import transaction
 import pymatgen
 import qgrid
 
 import pandas as pd
 
+from monty.json import MontyEncoder, MontyDecoder
 
-class MPQuery(persistent.Persistent):
+class MPQuery():
     def __init__(self, criteria, properties, API):
         '''
         :param criteria: dictionary of query criteria
@@ -42,7 +42,7 @@ class MPQuery(persistent.Persistent):
             df = self.df
         display(qgrid.show_grid(df))
 
-    def query(self, commit_transaction=True):
+    def query(self):
         '''
         Submit the query to the materials project and retrieve
             the results
@@ -55,8 +55,6 @@ class MPQuery(persistent.Persistent):
         self.result = m.query(criteria=self.criteria,
                               properties=self.properties,
                               mp_decode=False)
-        if commit_transaction:
-            transaction.commit()
         
     @property
     def df(self):
