@@ -11,15 +11,20 @@ import pprint
 import shutil
 import json
 
+from collections.abc import Mapping
+
 from monty.json import MontyEncoder, MontyDecoder
 
 from .job import JOBS_DIRECTORY
+from ..db import load_db, MSONStorage
+
+from tinydb import Query
 
 # TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence
 #           of SubmitJob
 # TODO: rename all pw.x classes => PwClassName instead of PWClassName
 
-class SubmitJob(base.Job):
+class SubmitJob(Mapping, base.Job):
     '''
     Persistent class which represents a submit job on nanoHUB
     :param calculation:
@@ -42,7 +47,7 @@ class SubmitJob(base.Job):
                  metadata=None, submit_id=None,
                  status=None, location=None,
                  submission_time=None, run=False,
-                 **kwargs):
+                 doc_id=None, hash=None):
         self.calculation = calculation
         self.code = code
         self.walltime = walltime
@@ -54,7 +59,7 @@ class SubmitJob(base.Job):
         self.submission_time = None
         self.run = False
         self.process = None
-        self.doc_id = None
+        self.doc_id = doc_id
         
         if ncpus > 0 and ncpus <= 20:
             self.ncpus = ncpus
@@ -67,25 +72,53 @@ class SubmitJob(base.Job):
             self.runname = 'run{}'.format(random.randint(1000,999999))
             
         if directory:
-            self.directory = os.path.join(directory, self.key)
+            self.directory = os.path.join(directory, self.hash)
         else:
             self.directory = os.path.join(JOBS_DIRECTORY,
                                           '{}_{}'.format(self.runname,
-                                                         self.key))
+                                                         self.hash))
             
         self.input_name = self.calculation.input_name
         self.output_name = str(self.runname)+'.stdout'
 
-    
+
     def __repr__(self):
         return pprint.pformat(self.as_dict())
+    
+    def __getitem__(self, item):
+        return self.as_dict()[item]
+    
+    def __iter__(self):
+        return self.as_dict().__iter__()
+    
+    def __len__(self):
+        return len(self.as_dict())
+    
+    @property
+    def hash(self):
+        return self.calculation.hash()
 
 
-    def insert(self, db):
+    def insert(self):
+        db = load_db()
         table = db.table(self.__class__.__name__)
+        if self.doc_id:
+            raise 
         self.doc_id = table.insert(self)
+        doc_ids = table.write_back([self], doc_ids=[self.doc_id])
         print('Inserted Job {} into database with doc_id {}'
-              .format(self.key, self.doc_id))
+              .format(self.hash, self.doc_id))
+        return self.doc_id
+    
+    # TODO: fix so that entries with the same hash aren't all updated
+    #       i.e. fix querying by doc_id
+    def update(self):
+        db = load_db()
+        table = db.table(self.__class__.__name__)
+        query = Query()
+        self.doc_id = table.write_back([self], doc_ids=[self.doc_id])[0]
+        print('Updated Job {} in database with doc_id {}'
+              .format(self.hash, self.doc_id))
         return self.doc_id
     
     
@@ -126,9 +159,11 @@ class SubmitJob(base.Job):
         self.status = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
         
-        print('Submitted job {} {}'.format(self.runname, self.key))
+        print('Submitted job runname {} hash {} submit id {}'.format(self.runname,
+                                                                     self.hash,
+                                                                     self.submit_id))
         
-        self.doc_id = self.upsert()
+        self.doc_id = self.update()
 
         return
     
@@ -145,7 +180,7 @@ class SubmitJob(base.Job):
         self.status = 'Killed'
         if clean:
             shutil.rmtree(self.directory)
-        self.doc_id = self.upsert()
+        self.doc_id = self.update()
     
     
     def check_status(self):
@@ -180,7 +215,7 @@ class SubmitJob(base.Job):
                 self.status = 'Complete'
                 self.attach()
             
-        self.doc_id = self.upsert()
+        self.doc_id = self.update()
         
         return self.status_dict
     
@@ -203,15 +238,9 @@ class SubmitJob(base.Job):
             'Run Name': self.runname,
             'Location': self.location,
             'Submission Time': self.submission_time,
-            'Key': self.key
+            'Hash': self.hash
         }
         return status_dict
-    
-    
-    @property
-    def key(self):
-        return self.calculation.key
-      
         
     @property
     def input_path(self):
@@ -312,6 +341,8 @@ class SubmitJob(base.Job):
             'submission_time': self.submission_time,
             'metadata': self.metadata,
             'directory': self.directory,
+            'hash': self.hash,
+            'doc_id': self.doc_id
         }
         return dict_
     

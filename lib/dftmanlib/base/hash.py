@@ -16,7 +16,7 @@ def sort_recursive(var0):
 def dftman_hash(bytes_):
     blake2b_hash = hashlib.blake2b(digest_size=6, salt=b'htdft')
     blake2b_hash.update(bytes_)
-    return blake2b_hash.hexdigest()
+    return str(blake2b_hash.hexdigest())
 
 def hash_dict(dict_):
     sorted_dict = sort_recursive(dict_)

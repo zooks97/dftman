@@ -80,6 +80,10 @@ class Calculation(ABC):
 class Job(ABC):
     
     @abstractmethod
+    def hash(self):
+        pass
+    
+    @abstractmethod
     def submit(self, report=True, block_if_run=True,
                commit_transaction=True):
         pass
@@ -98,11 +102,6 @@ class Job(ABC):
     
     @abstractmethod
     def parse_output(self):
-        pass
-    
-    @property
-    @abstractmethod
-    def key(self):
         pass
 
     @property
@@ -135,6 +134,10 @@ class Job(ABC):
     
 
 class Workflow(ABC):
+    
+    @abstractmethod
+    def hash(self):
+        pass
     
     @abstractmethod
     def run(self):

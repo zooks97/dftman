@@ -52,8 +52,7 @@ class PWInput(PymatgenPWInput):
     def __repr__(self):
         return pprint.pformat(self.as_dict())
     
-    @property
-    def key(self):
+    def hash(self):
         return base.hash_dict(self.as_dict())
     
     def write_input(self, filename):
@@ -125,6 +124,9 @@ class PWCalculation(base.Calculation):
             'directory': self.directory
         }
         return pprint.pformat(dict_)
+        
+    def hash(self):
+        return self.input.hash()
         
     @property
     def directory(self):

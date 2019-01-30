@@ -35,6 +35,21 @@ class EOSWorkflow(base.Workflow):
         self.stored = False
         self.jobs_stored = False
     
+    def hash(self):
+        if isinstance(self.structure, Structure):
+            structure = self.structure.as_dict()
+        else:
+            structure = self.structure
+        key_dict = {
+            'structure': structure,
+            'pseudo': self.pseudo,
+            'base_inputs': self.base_inputs,
+            'min_strain': self.min_strain,
+            'max_strain': self.max_strain,
+            'n_strains': self.n_strains
+        }
+        return base.hash_dict(key_dict)
+    
     def run(self):
         jobs = self.get_jobs()
         for job in jobs:
@@ -74,22 +89,6 @@ class EOSWorkflow(base.Workflow):
         else:
             jobs = self.make_jobs()
         return jobs
-        
-    @property
-    def key(self):
-        if isinstance(self.structure, Structure):
-            structure = self.structure.as_dict()
-        else:
-            structure = self.structure
-        key_dict = {
-            'structure': structure,
-            'pseudo': self.pseudo,
-            'base_inputs': self.base_inputs,
-            'min_strain': self.min_strain,
-            'max_strain': self.max_strain,
-            'n_strains': self.n_strains
-        }
-        return base.hash_dict(key_dict)
     
     @property
     def input(self):

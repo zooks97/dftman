@@ -10,7 +10,7 @@ def submitjob_statuses(jobs):
     df = pd.DataFrame(status_dicts)
     if not df.empty:
         df = df.set_index('Run Name')
-        df = df[['ID', 'Location', 'Submission Time', 'Key']]
+        df = df[['ID', 'Location', 'Submission Time']]
     return df
     
 def submit_status():
