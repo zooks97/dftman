@@ -43,10 +43,11 @@ class SubmitJob(Mapping, base.Job):
     
     def __init__(self, calculation, code,
                  walltime='01:00:00', ncpus=1,
-                 runname=None, directory=None,
-                 metadata=None, submit_id=None,
+                 runname=None, parent_directory=None,
+                 metadata=None,
+                 directory=None, submit_id=None,
                  status=None, location=None,
-                 submission_time=None, run=False,
+                 submission_time=None, submitted=False,
                  doc_id=None, hash=None):
         self.calculation = calculation
         self.code = code
@@ -57,7 +58,7 @@ class SubmitJob(Mapping, base.Job):
         self.status = status
         self.location = location
         self.submission_time = submission_time
-        self.run = run
+        self.submitted = submitted
         self.process = None
         self.doc_id = doc_id
         
@@ -70,9 +71,11 @@ class SubmitJob(Mapping, base.Job):
             self.runname = runname
         else:
             self.runname = 'run{}'.format(random.randint(1000,999999))
-            
+        
         if directory:
-            self.directory = os.path.join(directory, self.hash)
+            self.directory = directory
+        elif parent_directory:
+            self.directory = os.path.join(parent_directory, self.hash)
         else:
             self.directory = os.path.join(JOBS_DIRECTORY,
                                           '{}_{}'.format(self.runname,
@@ -96,15 +99,15 @@ class SubmitJob(Mapping, base.Job):
     
     @property
     def hash(self):
-        return self.calculation.hash()
+        return self.calculation.hash
 
 
-    def insert(self):
+    def insert(self, block_if_stored=True):
         db = load_db()
         table = db.table(self.__class__.__name__)
         if self.doc_id:
             raise 
-        self.doc_id = table.insert(self)
+        self.doc_id = table.insert(self, block_if_stored)
         doc_ids = table.write_back([self], doc_ids=[self.doc_id])
         print('Inserted Job {} into database with doc_id {}'
               .format(self.hash, self.doc_id))
@@ -122,27 +125,18 @@ class SubmitJob(Mapping, base.Job):
         return self.doc_id
     
     
-    def submit(self, report=True, block_if_run=True,
-               require_doc_id=True):
-        if block_if_run and self.run:
-            print('Already run, not submitting.')
-            return
-        elif require_doc_id and not self.doc_id:
-            print('Job must be inserted into the database first,'\
-                  ' not submitting.')
-            return
-        else:
-            if not os.path.exists(self.directory):
-                os.makedirs(self.directory)
-            self.calculation.write_input(name=self.runname+'.in',
-                                         directory=self.directory)
-            
-            process = subprocess.Popen(shlex.split(self.command),
-                                       cwd=self.directory,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE)
+    def _submit(self, report=True):
+        if not os.path.exists(self.directory):
+            os.makedirs(self.directory)
+        self.calculation.write_input(name=self.runname+'.in',
+                                     directory=self.directory)
 
-        self.run = True
+        process = subprocess.Popen(shlex.split(self.command),
+                                   cwd=self.directory,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        
+        self.submitted = True
         
         stdout = process.stdout.peek().decode('utf-8')
         stderr = process.stderr.peek().decode('utf-8')
@@ -162,11 +156,19 @@ class SubmitJob(Mapping, base.Job):
         print('Submitted job runname {} hash {} submit id {}'.format(self.runname,
                                                                      self.hash,
                                                                      self.submit_id))
-        
-        self.doc_id = self.update()
-
         return
-    
+
+
+    def run(self, report=True, block_if_submitted=True,
+            block_if_stored=True):
+        if block_if_submitted and self.submitted:
+            print('Already run, not running.')
+            return
+        self.doc_id = self.insert(block_if_stored)
+        self._submit(report)
+        self.doc_id = self.update()
+        return self.doc_id
+        
     
     def attach(self):
         process = subprocess.Popen(['submit', '--attach', str(self.submit_id)],
@@ -226,9 +228,10 @@ class SubmitJob(Mapping, base.Job):
     
     
     def parse_output(self):
-        return self.calculation.parse_output(name=self.output_name,
+        output = self.calculation.parse_output(name=self.output_name,
                                              directory=self.directory)
-    
+        self.update()
+        return output
     
     @property
     def status_dict(self):
@@ -238,7 +241,8 @@ class SubmitJob(Mapping, base.Job):
             'Run Name': self.runname,
             'Location': self.location,
             'Submission Time': self.submission_time,
-            'Hash': self.hash
+            'Hash': self.hash,
+            'Doc ID': self.doc_id,
         }
         return status_dict
         
@@ -342,7 +346,8 @@ class SubmitJob(Mapping, base.Job):
             'metadata': self.metadata,
             'directory': self.directory,
             'hash': self.hash,
-            'doc_id': self.doc_id
+            'doc_id': self.doc_id,
+            'submitted': self.submitted
         }
         return dict_
     

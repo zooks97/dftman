@@ -84,16 +84,15 @@ class Job(ABC):
         pass
     
     @abstractmethod
-    def submit(self, report=True, block_if_run=True,
-               commit_transaction=True):
+    def run(self):
         pass
     
     @abstractmethod
-    def kill(self, clean=True, commit_transaction=True):
+    def kill(self):
         pass
     
     @abstractmethod
-    def check_status(self, commit_transaction=True):
+    def check_status(self):
         pass
     
     @abstractmethod
@@ -135,17 +134,13 @@ class Job(ABC):
 
 class Workflow(ABC):
     
+    @property
     @abstractmethod
     def hash(self):
         pass
     
     @abstractmethod
     def run(self):
-        pass
-    
-    @property
-    @abstractmethod
-    def key(self):
         pass
     
     @property

@@ -1,40 +1,87 @@
 import copy
+import sys
 import os.path
 
 import numpy as np
 import pandas as pd
 
+from collections.abc import Mapping
+
 from pymatgen import Structure
 from pymatgen.analysis.eos import EOS
+
+from monty.json import MontyDecoder
+
+from tinydb import Query
 
 from ..pwscf import pwcalculation_helper
 from ...job import SubmitJob
 from ... import base
-from ... import db
+from ...db import load_db
 
 
-class EOSWorkflow(base.Workflow):
+class EOSWorkflow(Mapping, base.Workflow):
 
-    def __init__(self, structure, pseudo, base_inputs, root,
-                 min_strain=-0.05, max_strain=0.15, n_strains=8,
-                 job_class=SubmitJob, code='espresso-6.2.1_pw'):
+    def __init__(self, structure, pseudo, base_inputs,
+                 min_strain=-0.10, max_strain=0.15, n_strains=8,
+                 code='espresso-6.2.1_pw', job_type='SubmitJob',
+                 stored=False, doc_id=None,
+                 jobs_stored=False, job_ids=None,
+                 hash=None, directory=None):
+        
+        if not isinstance(structure, Structure):
+            structure = Structure.from_dict(structure)
         self.structure = structure
         self.pseudo = pseudo
         self.base_inputs = base_inputs
-        self.root = root
+        
         self.min_strain = min_strain
         self.max_strain = max_strain
         self.n_strains = n_strains
+        
+        self.job_type = job_type
+        self.job_class = getattr(sys.modules[__name__], job_type)
+        self.code = code
+        
         self.strains = np.linspace(self.min_strain,
                                    self.max_strain,
                                    self.n_strains)
-        self.directory = os.path.join('./EOSWorkflows/', self.key)
-        self.job_class = job_class
-        self.code = code
-        self.job_keys = [job.key for job in self.make_jobs()]
-        self.stored = False
-        self.jobs_stored = False
+        
+        self.stored = stored 
+        self.doc_id = doc_id
+        self.jobs_stored = jobs_stored
+        self.job_ids = job_ids
+        
+        self.directory = os.path.join('./EOSWorkflows/', self.hash)
     
+    def __getitem__(self, item):
+        return self.as_dict()[item]
+    
+    def __iter__(self):
+        return self.as_dict().__iter__()
+    
+    def __len__(self):
+        return len(self.as_dict())
+    
+    def insert(self):
+        db = load_db()
+        table = db.table(self.__class__.__name__)
+        self.doc_id = table.insert(self)
+        doc_ids = table.write_back([self], doc_ids=[self.doc_id])
+        print('Inserted EOSWorkflow {} into database with doc_id {}'
+              .format(self.hash, self.doc_id))
+        return self.doc_id
+        
+    def update(self):
+        db = load_db()
+        table = db.table(self.__class__.__name__)
+        query = Query()
+        self.doc_id = table.write_back([self], doc_ids=[self.doc_id])[0]
+        print('Updated EOSWorkflow {} in database with doc_id {}'
+              .format(self.hash, self.doc_id))
+        return self.doc_id
+    
+    @property
     def hash(self):
         if isinstance(self.structure, Structure):
             structure = self.structure.as_dict()
@@ -51,19 +98,32 @@ class EOSWorkflow(base.Workflow):
         return base.hash_dict(key_dict)
     
     def run(self):
-        jobs = self.get_jobs()
-        for job in jobs:
-            job.submit()
+        job_ids = []
+        for job in self.jobs:
+            job_id = job.run(block_if_stored=False)
+            job_ids.append(job_id)
+        self.job_ids = job_ids
         self.jobs_stored = True
-        return
+        self.doc_id = self.insert()
+        self.stored = True
+        self.update()
+        return self.doc_id
         
     def check_status(self):
         statuses = []
-        for job in self.get_jobs():
+        for job in self.jobs:
             statuses.append(job.check_status())
-        return pd.DataFrame(statuses) 
+        status_df = pd.DataFrame(statuses)
+        if status_df.empty:
+            self.status = 'Unknown'
+        elif (status_df['Status'] == 'Complete').all():
+            self.status = 'Complete'
+            self.update()
+        else:
+            self.status = 'Running'
+        return status_df
     
-    def make_jobs(self):
+    def _make_jobs(self):
         jobs = []
         for strain in self.strains:
             structure = copy.deepcopy(self.structure)
@@ -75,52 +135,81 @@ class EOSWorkflow(base.Workflow):
             calculation = pwcalculation_helper(
                 **inputs, additional_inputs = list(self.pseudo.values()))
             
-            job = self.job_class(calculation, runname=calculation.key,
-                                 directory=self.directory, code=self.code,
+            job = self.job_class(calculation, runname=calculation.hash,
+                                 parent_directory=self.directory, code=self.code,
                                  metadata={'strain': strain})
             
             jobs.append(job)
         
         return jobs
     
-    def get_jobs(self):
+    def _get_jobs(self):
         if self.jobs_stored:
-            jobs = [self.root.Jobs[key] for key in self.job_keys]
+            db = load_db()
+            table = db.table(self.job_type)
+            jobs = [table.get(doc_id=job_id) for job_id in self.job_ids]
         else:
-            jobs = self.make_jobs()
+            jobs = self._make_jobs()
         return jobs
+         
+    @property
+    def jobs(self):
+        return self._get_jobs()
     
     @property
     def input(self):
-        pass
+        return {
+            'structure': self.structure,
+            'pseudo': self.pseudo,
+            'base_inputs': self.base_inputs,
+            'min_strain': self.min_strain,
+            'max_strain': self.max_strain,
+            'n_strains': self.n_strains
+        }
     
     @property
     def output(self):
         data = []
         for job in self.jobs:
-            job_data = {
-                'strain': job.metadata['strain'],
-                'energy': job.output.final_total_energy,  # eV
-                'volume': job.input.structure.volume  # A^3
-            }
-            data.append(job_data)
+            if job.status == 'Complete':
+                job.parse_output()
+                job_data = {
+                    'strain': job.metadata['strain'],
+                    'energy': job.output.final_total_energy,  # eV
+                    'volume': job.input.structure.volume  # A^3
+                }
+                data.append(job_data)
         data_df = pd.DataFrame(data)
-        equations = ['murnaghan', 'birch', 'vinet',
-                     'birch_murnaghan', 'pourier_tarantola',
-                     'deltafactor', 'numerical_eos']
-        eos_fits = {}
-        for equation in equations:
-            eos = EOS(equation)
-            eos_fits[equation] = eos(df['volumes'], df['energies'])
-        return eos_fits
+        if not data_df.empty:
+            equations = ['murnaghan', 'birch', 'vinet',
+                         'birch_murnaghan', 'pourier_tarantola',
+                         'deltafactor', 'numerical_eos']
+            eos_fits = {}
+            for equation in equations:
+                eos = EOS(equation)
+                eos_fits[equation] = eos.fit(data_df['volume'], data_df['energy'])
+            return eos_fits
             
     def as_dict(self):
-        pass 
+        dict_ = {
+            'structure': self.structure,
+            'pseudo': self.pseudo,
+            'base_inputs': self.base_inputs,
+            'min_strain': self.min_strain,
+            'max_strain': self.max_strain,
+            'n_strains': self.n_strains,
+            'job_type': self.job_type,
+            'code': self.code,
+            'stored': self.stored,
+            'doc_id': self.doc_id,
+            'jobs_stored': self.jobs_stored,
+            'job_ids': self.job_ids,
+            'directory': self.directory
+        }
+        return dict_
         
     @classmethod
     def from_dict(cls, dict_):
-        if dict_['id']:
-            del dict_['id']
         decoded = {key: MontyDecoder().process_decoded(value)
                    for key, value in dict_.items()
                    if not key.startswith("@")}

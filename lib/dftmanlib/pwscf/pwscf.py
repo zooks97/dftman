@@ -52,6 +52,7 @@ class PWInput(PymatgenPWInput):
     def __repr__(self):
         return pprint.pformat(self.as_dict())
     
+    @property
     def hash(self):
         return base.hash_dict(self.as_dict())
     
@@ -124,9 +125,10 @@ class PWCalculation(base.Calculation):
             'directory': self.directory
         }
         return pprint.pformat(dict_)
-        
+    
+    @property
     def hash(self):
-        return self.input.hash()
+        return self.input.hash
         
     @property
     def directory(self):
@@ -167,16 +169,6 @@ class PWCalculation(base.Calculation):
     @output_name.setter
     def output_name(self, value):
         self._output_name = value
-    
-    @property
-    def key(self):
-        '''
-        Return the calculation's input's key, which is a 
-            hash value for the input which should uniquely
-            identify it
-        :return: key (hash) string
-        '''
-        return self.input.key
     
     def write_input(self, name=None, directory=None):
         '''
@@ -257,7 +249,7 @@ class PWOutput(base.Output):
     :param stdout_path: string describing the path to the standard
         output file from pw.x, used for bookkeeping
     '''
-    def __init__(self, string='', path=''):
+    def __init__(self, string='', path='', **kwargs):
         self._path = path
         self._string = string
         self._lines = string.split('\n')

@@ -1,3 +1,3 @@
-from .db import (init_db, load_db, MSONStorage, MSONStorageProxy, MSONTable)
+from .db import (load_db, MSONStorage, MSONStorageProxy, MSONTable)
 
-__all__ = ['init_db', 'load_db', MSONStorage, MSONStorageProxy, MSONTable]
+__all__ = ['load_db', 'MSONStorage', 'MSONStorageProxy', 'MSONTable']
