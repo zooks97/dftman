@@ -23,7 +23,7 @@ from ...db import load_db
 class EOSWorkflow(Mapping, base.Workflow):
 
     def __init__(self, structure, pseudo, base_inputs,
-                 min_strain=-0.10, max_strain=0.15, n_strains=8,
+                 min_strain=-0.15, max_strain=0.15, n_strains=8,
                  code='espresso-6.2.1_pw', job_type='SubmitJob',
                  stored=False, doc_id=None,
                  jobs_stored=False, job_ids=None,

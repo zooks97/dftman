@@ -589,7 +589,7 @@ class PWOutput(base.Output):
             positions = [j[1] for j in initial_atomic_positions]
             initial_structure = Structure(initial_unit_cell,
                                           species, positions)
-            return initial_structure.as_dict()
+            return initial_structure
         else:
             return None
 
@@ -776,7 +776,7 @@ class PWOutput(base.Output):
                                 for i in final_atomic_positions]
             positions = [j[1] for j in final_atomic_positions]
             final_structure = Structure(final_unit_cell, species, positions)
-            return final_structure.as_dict()
+            return final_structure
         else:
             return None
 

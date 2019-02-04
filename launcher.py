@@ -182,7 +182,10 @@ def delete_project(_):
             deleted_project = projects_list.pop(i)
     
     # remove project directory
-    shutil.rmtree(deleted_project['_path'])
+    try:
+        shutil.rmtree(deleted_project['_path'])
+    except:
+        pass
     write_projects(projects_list)
     
     show_projects()
@@ -204,7 +207,7 @@ def duplicate_project(_):
     shutil.move(dup_path / og_tool.name, dup_tool)
     
     path_link = '<a href="{}" target="_blank">{}</a>'.format(dup_path, dup_path)
-    tool_link = '<a href="{}" target="_blank">Installed Tool</a>'.format(dup_tool)
+    tool_link = '<a href="{}" target="_blank">Notebook</a>'.format(dup_tool)
     
     project_dict = {
         'Name': str(dup_name),

@@ -1,5 +1,3 @@
-from .. import base
-
 import subprocess
 import shlex
 import time
@@ -17,6 +15,7 @@ from monty.json import MontyEncoder, MontyDecoder
 
 from .job import JOBS_DIRECTORY
 from ..db import load_db, MSONStorage
+from .. import base
 
 from tinydb import Query
 
@@ -53,6 +52,7 @@ class SubmitJob(Mapping, base.Job):
         self.code = code
         self.walltime = walltime
         self.metadata = metadata
+        self.ncpus = ncpus
         
         self.submit_id = submit_id
         self.status = status
@@ -62,15 +62,11 @@ class SubmitJob(Mapping, base.Job):
         self.process = None
         self.doc_id = doc_id
         
-        if ncpus > 0 and ncpus <= 20:
-            self.ncpus = ncpus
-        else:
-            raise ValueError('ncpus must be in the range [0, 20]')
         
         if runname:
             self.runname = runname
         else:
-            self.runname = 'run{}'.format(random.randint(1000,999999))
+            self.runname = 'dftman{}'.format(random.randint(1000,999999))
         
         if directory:
             self.directory = directory
@@ -135,6 +131,7 @@ class SubmitJob(Mapping, base.Job):
                                    cwd=self.directory,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
+        self.process = process
         
         self.submitted = True
         
@@ -200,22 +197,18 @@ class SubmitJob(Mapping, base.Job):
                 if runname == self.runname:
                     self.status = status
                     self.location = location
-                else:
-                    for line in stdout_lines[1:]:
-                        runname, id_, instance, status, location = \
-                            info_line.split()
-                        if runname == self.runname:
-                            self.submit_id = id_
-                            self.status = status
-                            self.location = location
-            else:
-                if os.path.exists(self.output_path):
-                    self.status = 'Complete'
-                    self.attach()
-        else:
-            if os.path.exists(self.output_path):
-                self.status = 'Complete'
-                self.attach()
+#                 else:
+#                     for line in stdout_lines[1:]:
+#                         runname, id_, instance, status, location = \
+#                             info_line.split()
+#                         if runname == self.runname:
+#                             self.submit_id = id_
+#                             self.status = status
+#                             self.location = location
+
+        if os.path.exists(self.output_path):
+            self.status = 'Complete'
+            self.attach()
             
         self.doc_id = self.update()
         
@@ -248,14 +241,13 @@ class SubmitJob(Mapping, base.Job):
         
     @property
     def input_path(self):
-        return os.path.join(self.directory, self.calculation.input_name)
-    
+        return os.path.join(self.directory,
+                            self.calculation.input_name)
     
     @property
     def output_path(self):
             return os.path.join(self.directory,
                                 self.output_name)
-
 
     @property
     def stdout(self):
@@ -302,7 +294,7 @@ class SubmitJob(Mapping, base.Job):
         else:
             runname_string = ''
         if self.calculation.additional_inputs:
-            additional_inputs = ' '.join(self.calculation.additional_inputs)
+            additional_inputs = ' -i '.join(self.calculation.additional_inputs)
             additional_inputs_string = '-i {:s}'.format(additional_inputs)
         else:
             additional_inputs_string = ''
@@ -362,4 +354,3 @@ class SubmitJob(Mapping, base.Job):
                    for key, value in dict_.items()
                    if not key.startswith("@")}
         return cls(**decoded)
-
