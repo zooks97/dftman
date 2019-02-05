@@ -140,7 +140,7 @@ def add_project(_):
     tool_dest = project_path / '{}.ipynb'.format(name)
     
     path_link = '<a href="{}" target="_blank">{}</a>'.format(project_path, project_path)
-    tool_link = '<a href="{}" target="_blank">Installed Tool</a>'.format(tool_dest)
+    tool_link = '<a href="{}" target="_blank">Notebook</a>'.format(tool_dest)
     
     project_dict = {
         'Name': str(name),

@@ -112,13 +112,15 @@ class PWCalculation(base.Calculation):
         prefix = self.input.sections['control'].get('prefix')
         if not self.input_name:
             self.input_name = '{}.in'.format(prefix)
+        if not self.output_name:
+            self.output_name = '{}.out'.format(prefix)
         self.additional_inputs = additional_inputs
         return
 
     def __repr__(self):
         dict_ = {
-            'input': self.input.as_dict(),
-            'output': self.output.output_dict,
+            'input': self.input,
+            'output': self.output,
             'input_name': self.input_name,
             'output_name': self.output_name,
             'output_type': self.output_type,
@@ -1062,6 +1064,8 @@ def pwinput_helper(structure, pseudo, control={}, system={},
 def pwcalculation_helper(**kwargs):
     if 'additional_inputs' in kwargs:
         additional_inputs = kwargs.pop('additional_inputs')
+    else:
+        additional_inputs = []
     pwinput = pwinput_helper(**kwargs)
     pwoutput = PWOutput()
     return PWCalculation(pwinput, output=pwoutput,

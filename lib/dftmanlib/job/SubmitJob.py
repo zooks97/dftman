@@ -82,7 +82,25 @@ class SubmitJob(Mapping, base.Job):
 
 
     def __repr__(self):
-        return pprint.pformat(self.as_dict())
+        dict_ = {
+            '@module': self.__class__.__module__,
+            '@class': self.__class__.__name__,
+            'calculation': self.calculation,
+            'code': self.code,
+            'walltime': self.walltime,
+            'ncpus': self.ncpus,
+            'runname': self.runname,
+            'submit_id': self.submit_id,
+            'status': self.status,
+            'location': self.location,
+            'submission_time': self.submission_time,
+            'metadata': self.metadata,
+            'directory': self.directory,
+            'hash': self.hash,
+            'doc_id': self.doc_id,
+            'submitted': self.submitted
+        }
+        return pprint.pformat(dict_)
     
     def __getitem__(self, item):
         return self.as_dict()[item]

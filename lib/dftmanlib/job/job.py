@@ -1,7 +1,8 @@
 import subprocess
+import os
 import pandas as pd
 
-JOBS_DIRECTORY = './jobs'
+JOBS_DIRECTORY = os.path.join(os.getcwd(), 'jobs')
 
 def submitjob_statuses(jobs):
     status_dicts = []
