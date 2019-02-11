@@ -1024,7 +1024,8 @@ def pseudo_helper(structure, pseudo_family, pseudo_table_path):
 
 def pwinput_helper(structure, pseudo, control={}, system={},
                    electrons={}, ions={}, cell={}, kpoints_mode='automatic',
-                   kpoints_grid=(1, 1, 1), kpoints_shift=(0, 0, 0)):
+                   kpoints_grid=(1, 1, 1), kpoints_shift=(0, 0, 0),
+                   job_type=None):
     if isinstance(structure, dict):
         structure = Structure.from_dict(structure)
     
@@ -1033,7 +1034,7 @@ def pwinput_helper(structure, pseudo, control={}, system={},
     if not control.get('restart_mode'):
         control['restart_mode'] = 'from_scratch'
     if control.get('outdir'):
-        control['outdir'] = './' 
+        del control['outdir'] # = './' 
     if not control.get('prefix'):
         control['prefix'] = 'pwscf'
     if not control.get('disk_io'):
@@ -1041,18 +1042,26 @@ def pwinput_helper(structure, pseudo, control={}, system={},
             control['disk_io'] = 'low'
         else:
             control['disk_io'] = 'medium'
-    # Submit specific
-    for key, value in {'prefix': 'pwscf',
-                       'outdir': './',
-                       'pseudo_dir': './'}.items():
-        control[key] = value
+    
+    # QE requires pseudo_dir + pseudo file names
+    for element in pseudo:
+        pseudo_dir = pathlib.Path(pseudo[element]).parent
+        pseudo[element] = pathlib.Path(pseudo[element]).name
+        
+    control['pseudo_dir'] = str(pseudo_dir)
+    
     # Clean for pymatgen.io.pwscf.PWInput
     for key in ['nat', 'ntyp']:
         if system.get(key):
             del system[key]
-    # Make pseudos appropriate for submit
-    for element in pseudo:
-        pseudo[element] = pathlib.Path(pseudo[element]).name
+    
+    if job_type == 'submit':
+        # Make pseudos appropriate for submit
+        # Submit specific
+        for key, value in {'prefix': 'pwscf',
+                           'outdir': './',
+                           'pseudo_dir': './'}.items():
+            control[key] = value
         
     return PWInput(structure=structure, pseudo=pseudo,
                    control=control, system=system,

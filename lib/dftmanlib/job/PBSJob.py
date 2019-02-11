@@ -6,12 +6,17 @@ import re
 import os
 import pprint
 import textwrap
+import getpass
 
 from collections.abc import Mapping
 
-from .job import JOBS_DIRECTORY
+from tinydb import Query
+from monty.json import MontyDecoder, MontyEncoder
+
+from ..db import load_db
 from .. import base
 
+PBSJOBS_DIRECTORY = os.path.join(os.getcwd(), 'PBSJobs')
 
 class PBSJob(Mapping, base.Job):
     
@@ -22,7 +27,7 @@ class PBSJob(Mapping, base.Job):
                  footertext='', parent_directory=None,
                  metadata=None,
                  directory=None, pbs_id=None,
-                 status=None, submission_time=None,
+                 status={}, submission_time=None,
                  submitted=False, doc_id=None, hash=None):
         self.calculation = calculation
         self.command = command
@@ -38,7 +43,23 @@ class PBSJob(Mapping, base.Job):
         self.metadata = metadata
         
         self.pbs_id = pbs_id
-        self.status = status
+        if status:
+            self.status = status
+        else:
+            self.status = {'pbs_id': pbs_id,
+                           'username': None,
+                           'queue': None,
+                           'runname': runname,
+                           'session_id': None,
+                           'nnodes': nnodes,
+                           'np': np,
+                           'reqd_memory': None,
+                           'walltime': walltime,
+                           'status': None,
+                           'elapsed_time': None,
+                           'submission_time': submission_time,
+                           'doc_id': doc_id,
+                           'hash': self.hash}
         self.submission_time = submission_time
         self.submitted = submitted
         self.doc_id = doc_id
@@ -50,13 +71,20 @@ class PBSJob(Mapping, base.Job):
         
         if directory:
             self.directory = directory
-        elif parent_directory:
-            self.directory = os.path.join(parent_directory, self.hash)
         else:
-            self.directory = os.path.join(JOBS_DIRECTORY,
-                                          '{runname:s}_{hash:s}'\
-                                          .format(runname=self.runname,
-                                                  hash=self.hash))
+            if parent_directory:
+                self.directory = os.path.join(parent_directory, self.hash)
+            else:
+                self.directory = os.path.join(PBSJOBS_DIRECTORY,
+                                              '{runname:s}_{hash:s}'\
+                                              .format(runname=self.runname,
+                                                      hash=self.hash))
+            if os.path.exists(self.directory):
+                i = 1
+                tmp_dir = self.directory+'_{}'
+                while os.path.exists(self.directory):
+                    self.directory = tmp_dir.format(i)
+                    i += 1
         
     def __repr__(self):
         return pprint.pformat(self.as_dict())
@@ -99,29 +127,23 @@ class PBSJob(Mapping, base.Job):
     def write_script(self):
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
-        script = textwrap.dedent(
-        '''
-        #!/bin/bash
-        #PBS -l walltime={walltime:s}
-        #PBS -l nodes={nnodes:d}:ppn={ppn:d}
-        #PBS -q {queue:s}
-        #PBS -N {runname:s}
-        
-        {headertext:s}
-        
-        mpirun -np {np:d} {command:s}
-        
-        {footertext:s}
-        '''.format(walltime=self.walltime,
-                   nnodes=self.nnodes,
-                   ppn=self.ppn,
-                   queue=self.queue,
-                   runname=self.runname,
-                   headertext=self.headertext,
-                   np=self.np,
-                   command=self.run_command,
-                   footertext=self.footertext)
-        )
+        script = '#!/bin/bash\n'\
+                 '#PBS -l walltime={walltime:s}\n'\
+                 '#PBS -l nodes={nnodes:d}:ppn={ppn:d}\n'\
+                 '#PBS -q {queue:s}\n'\
+                 '#PBS -N {runname:s}\n'\
+                 '{headertext:s}\n'\
+                 '{run_command:s}\n'\
+                 '{footertext:s}\n'.format(
+                     walltime=self.walltime,
+                     nnodes=self.nnodes,
+                     ppn=self.ppn,
+                     queue=self.queue,
+                     runname=self.runname,
+                     headertext=self.headertext,
+                     np=self.np,
+                     run_command=self.run_command,
+                     footertext=self.footertext).strip()
         with open(self.script_path, 'w') as f:
             f.write(script)
             
@@ -131,7 +153,9 @@ class PBSJob(Mapping, base.Job):
         self.update()
         return output
     
-    def run(self):
+    def run(self, block_if_run=True):
+        if not self.doc_id:
+            self.insert()
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
         if block_if_run and self.submitted:
@@ -140,22 +164,75 @@ class PBSJob(Mapping, base.Job):
         else:
             self.write_input()
             self.write_script()
-            process = subprocess.Popen(shlex.split(self.pbs_command),
+            process = subprocess.Popen(self.pbs_command,
                                        cwd=self.calculation.directory,
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE)
+            self.process = process
         stdout = process.stdout.peek().decode('utf-8')
+        stderr = process.stderr.peek().decode('utf-8')
         try:
             self.pbs_id = int(stdout.split('.')[0])
             self.status = 'Submitted'
             self.submitted = True
             self.submission_time = time.asctime(time.gmtime())
+            self.update()
         except:
-            raise ValueError('Could not find id. Didn\'t submit?')
-        return self.pbs_id
+            raise ValueError('Could not find id. Didn\'t submit?\n'\
+                             'stdout: {}\nstderr: {}'.format(stdout, stderr))
+        return self.doc_id
     
     def check_status(self):
-        pass
+        if not self.pbs_id:
+            raise ValueError('Job must have a PBS ID')
+        
+        status_codes = {'C': 'Complete',
+                        'E': 'Exiting',
+                        'H': 'Held',
+                        'Q': 'Queued',
+                        'R': 'Running',
+                        'T': 'Moving',
+                        'W': 'Waiting'
+                     }
+
+        qstat = subprocess.Popen(['qstat', '-u', getpass.getuser(),
+                                  str(self.pbs_id)],
+                                 cwd=self.calculation.directory,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+
+        qstat_stdout = qstat.stdout.read().decode('utf-8')
+        qstat_line = qstat_stdout.strip().split('\n')[-1]
+        try:
+            pbs_id, username, queue, runname, session_id,\
+            nnodes, np, reqd_memory, walltime, status, elapsed_time = qstat_line.split()
+            self.status = {'pbs_id': pbs_id,
+                           'username': username,
+                           'queue': queue,
+                           'runname': runname,
+                           'session_id': session_id,
+                           'nnodes': nnodes,
+                           'np': np,
+                           'reqd_memory': reqd_memory,
+                           'walltime': walltime,
+                           'status': status_codes[status],
+                           'elapsed_time': elapsed_time,
+                           'submission_time': self.submission_time,
+                           'doc_id': self.doc_id,
+                           'hash': self.hash
+                          }
+        except:
+            self.status['status'] = 'Complete'
+        
+        self.update()
+        pretty_status = {'PBS ID': self.status['pbs_id'],
+                         'Run Name': self.status['runname'],
+                         'Status': self.status['status'],
+                         'Elapsed Time': self.status['elapsed_time'],
+                         'Walltime': self.status['walltime'],
+                         'Queue': self.status['queue'],
+                         'Doc ID': self.doc_id}             
+        return pretty_status
     
     def kill(self):
         process = subprocess.run(['qdel', str(self.pbs_id)],
@@ -178,8 +255,8 @@ class PBSJob(Mapping, base.Job):
     
     @property
     def pbs_command(self):
-        return shlex.split('qsub {runname}_run_script.sh'.format(
-            runname=self.runname))
+        return shlex.split('qsub {script_path:s}'.format(
+            script_path=self.script_path))
     
     @property
     def input_name(self):
@@ -196,7 +273,7 @@ class PBSJob(Mapping, base.Job):
                             'pbs_runscript.sh')
     
     @property
-    def output_path(self):
+    def output_name(self):
         return self.calculation.output_name
     
     @property

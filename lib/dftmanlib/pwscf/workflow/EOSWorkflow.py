@@ -15,16 +15,17 @@ from monty.json import MontyDecoder
 from tinydb import Query
 
 from ..pwscf import pwcalculation_helper
-from ...job import SubmitJob
+from ...job import SubmitJob, PBSJob
 from ... import base
 from ...db import load_db
 
+EOSWORKFLOWS_DIRECTORY = os.path.join(os.getcwd(), 'EOSWorkflows')
 
 class EOSWorkflow(Mapping, base.Workflow):
 
     def __init__(self, structure, pseudo, base_inputs,
                  min_strain=-0.15, max_strain=0.15, n_strains=8,
-                 code='espresso-6.2.1_pw', job_type='SubmitJob',
+                 job_type='SubmitJob', job_kwargs={},
                  stored=False, doc_id=None,
                  jobs_stored=False, job_ids=None,
                  hash=None, directory=None):
@@ -41,7 +42,7 @@ class EOSWorkflow(Mapping, base.Workflow):
         
         self.job_type = job_type
         self.job_class = getattr(sys.modules[__name__], job_type)
-        self.code = code
+        self.job_kwargs = job_kwargs
         
         self.strains = np.linspace(self.min_strain,
                                    self.max_strain,
@@ -52,7 +53,7 @@ class EOSWorkflow(Mapping, base.Workflow):
         self.jobs_stored = jobs_stored
         self.job_ids = job_ids
         
-        self.directory = os.path.join('./EOSWorkflows/', self.hash)
+        self.directory = os.path.join(EOSWORKFLOWS_DIRECTORY, self.hash)
     
     def __getitem__(self, item):
         return self.as_dict()[item]
@@ -100,7 +101,7 @@ class EOSWorkflow(Mapping, base.Workflow):
     def run(self):
         job_ids = []
         for job in self.jobs:
-            job_id = job.run(block_if_stored=False)
+            job_id = job.run(block_if_run=False)
             job_ids.append(job_id)
         self.job_ids = job_ids
         self.jobs_stored = True
@@ -114,13 +115,6 @@ class EOSWorkflow(Mapping, base.Workflow):
         for job in self.jobs:
             statuses.append(job.check_status())
         status_df = pd.DataFrame(statuses)
-        if status_df.empty:
-            self.status = 'Unknown'
-        elif (status_df['Status'] == 'Complete').all():
-            self.status = 'Complete'
-            self.update()
-        else:
-            self.status = 'Running'
         return status_df
     
     def _make_jobs(self):
@@ -136,7 +130,8 @@ class EOSWorkflow(Mapping, base.Workflow):
                 **inputs, additional_inputs = list(self.pseudo.values()))
             
             job = self.job_class(calculation, runname=calculation.hash,
-                                 parent_directory=self.directory, code=self.code,
+                                 parent_directory=self.directory,
+                                 **self.job_kwargs,
                                  metadata={'strain': strain})
             
             jobs.append(job)
@@ -171,7 +166,7 @@ class EOSWorkflow(Mapping, base.Workflow):
     def output(self):
         data = []
         for job in self.jobs:
-            if job.status == 'Complete':
+            if job.status['status'] == 'Complete':
                 job.parse_output()
                 job_data = {
                     'strain': job.metadata['strain'],
@@ -199,7 +194,7 @@ class EOSWorkflow(Mapping, base.Workflow):
             'max_strain': self.max_strain,
             'n_strains': self.n_strains,
             'job_type': self.job_type,
-            'code': self.code,
+            'job_kwargs': self.job_kwargs,
             'stored': self.stored,
             'doc_id': self.doc_id,
             'jobs_stored': self.jobs_stored,

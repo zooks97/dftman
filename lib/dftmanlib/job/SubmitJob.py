@@ -13,11 +13,12 @@ from collections.abc import Mapping
 
 from monty.json import MontyEncoder, MontyDecoder
 
-from .job import JOBS_DIRECTORY
 from ..db import load_db, MSONStorage
 from .. import base
 
 from tinydb import Query
+
+SUBMITJOBS_DIRECTORY = os.path.join(os.getcwd(), 'SubmitJobs')
 
 # TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence
 #           of SubmitJob
@@ -73,7 +74,7 @@ class SubmitJob(Mapping, base.Job):
         elif parent_directory:
             self.directory = os.path.join(parent_directory, self.hash)
         else:
-            self.directory = os.path.join(JOBS_DIRECTORY,
+            self.directory = os.path.join(SUBMITJOBS_DIRECTORY,
                                           '{}_{}'.format(self.runname,
                                                          self.hash))
             
@@ -200,6 +201,7 @@ class SubmitJob(Mapping, base.Job):
         self.doc_id = self.update()
     
     
+    # TODO: update this to be similar to PBSJob
     def check_status(self):
         if self.status == 'Complete':
             return self.status_dict
