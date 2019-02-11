@@ -26,6 +26,7 @@ class EOSWorkflow(Mapping, base.Workflow):
     def __init__(self, structure, pseudo, base_inputs,
                  min_strain=-0.15, max_strain=0.15, n_strains=8,
                  job_type='SubmitJob', job_kwargs={},
+                 metadata={},
                  stored=False, doc_id=None,
                  jobs_stored=False, job_ids=None,
                  hash=None, directory=None):
@@ -43,6 +44,8 @@ class EOSWorkflow(Mapping, base.Workflow):
         self.job_type = job_type
         self.job_class = getattr(sys.modules[__name__], job_type)
         self.job_kwargs = job_kwargs
+        
+        self.metadata = metadata
         
         self.strains = np.linspace(self.min_strain,
                                    self.max_strain,
@@ -78,8 +81,8 @@ class EOSWorkflow(Mapping, base.Workflow):
         table = db.table(self.__class__.__name__)
         query = Query()
         self.doc_id = table.write_back([self], doc_ids=[self.doc_id])[0]
-        print('Updated EOSWorkflow {} in database with doc_id {}'
-              .format(self.hash, self.doc_id))
+        # print('Updated EOSWorkflow {} in database with doc_id {}'
+        #       .format(self.hash, self.doc_id))
         return self.doc_id
     
     @property
@@ -199,7 +202,8 @@ class EOSWorkflow(Mapping, base.Workflow):
             'doc_id': self.doc_id,
             'jobs_stored': self.jobs_stored,
             'job_ids': self.job_ids,
-            'directory': self.directory
+            'directory': self.directory,
+            'metadata': self.metadata
         }
         return dict_
         

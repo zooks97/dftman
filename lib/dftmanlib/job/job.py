@@ -11,8 +11,8 @@ def pbsjob_statuses(jobs):
         status_dicts.append(job.check_status())
     df = pd.DataFrame(status_dicts)
     if not df.empty:
-        df = df.set_index('pbs_id')
-        df = df[['runname', 'status', 'elapsed_time', 'walltime', 'queue', 'doc_id']]
+        df = df.set_index('PBS ID')
+        df = df[['Run Name', 'Status', 'Elapsed Time', 'Walltime', 'Queue', 'Doc ID']]
     return df
 
 def pbs_status():

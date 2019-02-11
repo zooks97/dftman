@@ -114,8 +114,8 @@ class PBSJob(Mapping, base.Job):
         table = db.table(self.__class__.__name__)
         query = Query()
         self.doc_id = table.write_back([self], doc_ids=[self.doc_id])[0]
-        print('Updated Job {hash:s} in database with doc_id {doc_id:d}'\
-              .format(hash=self.hash, doc_id=self.doc_id))
+        # print('Updated Job {hash:s} in database with doc_id {doc_id:d}'\
+        #       .format(hash=self.hash, doc_id=self.doc_id))
         return self.doc_id
     
     def write_input(self):
@@ -173,7 +173,7 @@ class PBSJob(Mapping, base.Job):
         stderr = process.stderr.peek().decode('utf-8')
         try:
             self.pbs_id = int(stdout.split('.')[0])
-            self.status = 'Submitted'
+            self.status = {'status': 'Submitted', 'pbs_id': self.pbs_id}
             self.submitted = True
             self.submission_time = time.asctime(time.gmtime())
             self.update()
@@ -225,12 +225,12 @@ class PBSJob(Mapping, base.Job):
             self.status['status'] = 'Complete'
         
         self.update()
-        pretty_status = {'PBS ID': self.status['pbs_id'],
-                         'Run Name': self.status['runname'],
-                         'Status': self.status['status'],
-                         'Elapsed Time': self.status['elapsed_time'],
-                         'Walltime': self.status['walltime'],
-                         'Queue': self.status['queue'],
+        pretty_status = {'PBS ID': self.status.get('pbs_id'),
+                         'Run Name': self.status.get('runname'),
+                         'Status': self.status.get('status'),
+                         'Elapsed Time': self.status.get('elapsed_time'),
+                         'Walltime': self.status.get('walltime'),
+                         'Queue': self.status.get('queue'),
                          'Doc ID': self.doc_id}             
         return pretty_status
     
@@ -255,7 +255,7 @@ class PBSJob(Mapping, base.Job):
     
     @property
     def pbs_command(self):
-        return shlex.split('qsub {script_path:s}'.format(
+        return shlex.split('qsub "{script_path:s}"'.format(
             script_path=self.script_path))
     
     @property
