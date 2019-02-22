@@ -150,6 +150,11 @@ def add_project(_):
         '_path': str(project_path),
         '_tool': str(tool_dest)
     }
+        
+    # make directories
+    project_path.mkdir(parents=True)
+    # copy files
+    shutil.copy(str(tool_source), str(tool_dest))
     
     # load projects table
     projects_list = load_projects(as_df=False)
@@ -157,11 +162,6 @@ def add_project(_):
     projects_list.append(project_dict)
     # write new projects table
     write_projects(projects_list)
-        
-    # make directories
-    project_path.mkdir(parents=True)
-    # copy files
-    shutil.copy(str(tool_source), str(tool_dest))
     
     # show projects
     show_projects()
