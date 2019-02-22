@@ -3,9 +3,14 @@ import os
 import getpass
 import pandas as pd
 
-# TODO: update to support the prettier return values from check_status
-
 def pbsjob_statuses(jobs):
+    '''
+    Check the statuses of a set of PBSJobs
+    :param jobs: Jobs to check status of
+    :type jobs: PBSJob
+    :returns: status data frame
+    :rtype: pandas.DataFrame
+    '''
     status_dicts = []
     for job in jobs:
         status_dicts.append(job.check_status())
@@ -15,7 +20,13 @@ def pbsjob_statuses(jobs):
         df = df[['Run Name', 'Status', 'Elapsed Time', 'Walltime', 'Queue', 'Doc ID']]
     return df
 
+
 def pbs_status():
+    '''
+    Check the statuses of all PBS jobs in the user's queue
+    :returns: status data frame
+    :rtype: pandas.DataFrame
+    '''
     status_codes = {'C': 'Complete',
                 'E': 'Exiting',
                 'H': 'Held',
@@ -36,7 +47,8 @@ def pbs_status():
         for line in status_lines[4:]:
             pbs_id, username, queue, runname, session_id,\
             nnodes, np, reqd_memory, walltime, status, elapsed_time = line.split()
-            status = {'pbs_id': pbs_id,
+            status = {
+               'pbs_id': pbs_id.split('.')[0],
                'username': username,
                'queue': queue,
                'runname': runname,
@@ -56,8 +68,14 @@ def pbs_status():
     return status_df
         
     
-
 def submitjob_statuses(jobs):
+    '''
+    Check the statuses of a set of SubmitJobs
+    :param jobs: Jobs to check status of
+    :type jobs: SubmitJob
+    :returns: status data frame
+    :rtype: pandas.DataFrame
+    '''
     status_dicts = []
     for job in jobs:
         status_dicts.append(job.check_status())
@@ -67,7 +85,13 @@ def submitjob_statuses(jobs):
         df = df[['Status', 'ID', 'Location', 'Submission Time', 'Hash', 'Doc ID']]
     return df
     
+    
 def submit_status():
+    '''
+    Check the statuses of all Submit jobs in the user's queue
+    :returns: status data frame
+    :rtype: pandas.DataFrame
+    '''
     status_text = subprocess.check_output(['submit', '--status']).decode('utf-8').strip()
     
     nruns = len(status_text) - 1 if len(status_text) else 0

@@ -19,7 +19,42 @@ from .. import base
 PBSJOBS_DIRECTORY = os.path.join(os.getcwd(), 'PBSJobs')
 
 class PBSJob(Mapping, base.Job):
-    
+    '''
+    Class for running and storing jobs using the Torque
+        queue system
+    :param calculation: Calculation object for the job to run
+    :type calculation: dftmanlib.base.Calculation
+    :param command: Command used to run the job calculation within the
+        Torque shell script, i.e. the shell command used to run the calculation
+        Command supports curly-brace format notation for the following
+        variables:
+            input_path (str): full path to the job's input file
+            output_path (str): full path to the job's output file
+            additional_inputs (list): list of additional inputs from job's calculation
+        e.g. to echo additional_inputs into the output_path, the command string might be:
+            'echo {additional_inputs} > {output_path:s}'
+    :type command: str
+    :param walltime: walltime in hh:mm:ss format
+    :type walltime: str
+    :param nnodes: number of nodes to run on
+    :type nnodes: int
+    :param ppn: number of processors per node
+    :type ppn: int
+    :param np: number of processors to use
+    :type np: int
+    :param queue: name of the queue to submit to
+    :type queue: str
+    :param runname: run name defined in the run script
+    :type runname: str
+    :param headertext: text to add below the default Torque options but above the command
+    :type headertext: str
+    :param footertext: text to add below the coomand in the Torque script
+    :type footertext: str
+    :param parent_directory: parent directory for the job (may create child directories within
+    :type parent_directory: str
+    :param metadata: any additional data used to e.g. tag the job, useful for querying from
+        the database
+    '''
     def __init__(self, calculation, command,
                  walltime='01:00:00', nnodes=1,
                  ppn=16, np=1, queue='standby',
@@ -147,10 +182,11 @@ class PBSJob(Mapping, base.Job):
         with open(self.script_path, 'w') as f:
             f.write(script)
             
-    def parse_output(self):
+    def parse_output(self, update_to_db=False):
         output = self.calculation.parse_output(name=self.output_name,
                                                directory=self.directory)
-        self.update()
+        if update_to_db:
+            self.update()
         return output
     
     def run(self, block_if_run=True):
@@ -182,7 +218,7 @@ class PBSJob(Mapping, base.Job):
                              'stdout: {}\nstderr: {}'.format(stdout, stderr))
         return self.doc_id
     
-    def check_status(self):
+    def check_status(self, update_in_db=False):
         if not self.pbs_id:
             raise ValueError('Job must have a PBS ID')
         
@@ -206,8 +242,7 @@ class PBSJob(Mapping, base.Job):
         try:
             pbs_id, username, queue, runname, session_id,\
             nnodes, np, reqd_memory, walltime, status, elapsed_time = qstat_line.split()
-            self.status = {'pbs_id': pbs_id,
-                           'username': username,
+            self.status = {'username': username,
                            'queue': queue,
                            'runname': runname,
                            'session_id': session_id,
@@ -224,8 +259,10 @@ class PBSJob(Mapping, base.Job):
         except:
             self.status['status'] = 'Complete'
         
-        self.update()
-        pretty_status = {'PBS ID': self.status.get('pbs_id'),
+        if update_in_db:
+            self.update()
+        
+        pretty_status = {'PBS ID': self.pbs_id,
                          'Run Name': self.status.get('runname'),
                          'Status': self.status.get('status'),
                          'Elapsed Time': self.status.get('elapsed_time'),

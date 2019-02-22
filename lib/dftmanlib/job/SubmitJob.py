@@ -20,26 +20,27 @@ from tinydb import Query
 
 SUBMITJOBS_DIRECTORY = os.path.join(os.getcwd(), 'SubmitJobs')
 
-# TODO: adding subclass PwSubmitJob could fix the PwCalculation dependence
-#           of SubmitJob
-# TODO: rename all pw.x classes => PwClassName instead of PWClassName
-
 class SubmitJob(Mapping, base.Job):
     '''
-    Persistent class which represents a submit job on nanoHUB
-    :param calculation:
-    :param code:
-    :param walltime:
-    :param ncpus:
-    :param runname:
-    :param directory: parent directory for job directory
-    :param id:
-    :param status:
-    :param location:
-    :param submission_time:
-    :param run:
+    Representation of a submit job on nanoHUB
+    :param calculation: Calculation object which is a subclass of
+        the dftmanlib.base.Calculation abstract base class
+    :type calculation: dftmanlib.base.Calculation
+    :param code: The code to run on nanoHUB, must be a valid sumbit
+        code which you have access to, or submission to nanoHUB will fail
+    :type code: str
+    :param walltime: Walltime in hh:mm:ss format
+    :type walltime: str
+    :param ncpus: Number of CPUs requested
+    :type ncpus: int
+    :param runname: Run name of the job in submit, must be strictly alphanumeric
+        (no '-', '_', ' ', etc., only [a-z], [A-Z], and [1-9]
+    :type runname: str
+    :param parent_directory: parent directory for job directory
+    :type parent_directory: str
+    :param metadata: any additional data used to e.g. tag the job, useful for
+        querying from the database
     '''
-    
     
     def __init__(self, calculation, code,
                  walltime='01:00:00', ncpus=1,
@@ -81,7 +82,6 @@ class SubmitJob(Mapping, base.Job):
         self.input_name = self.calculation.input_name
         self.output_name = str(self.runname)+'.stdout'
 
-
     def __repr__(self):
         dict_ = {
             '@module': self.__class__.__module__,
@@ -116,7 +116,6 @@ class SubmitJob(Mapping, base.Job):
     def hash(self):
         return self.calculation.hash
 
-
     def insert(self, block_if_stored=True):
         db = load_db()
         table = db.table(self.__class__.__name__)
@@ -128,8 +127,6 @@ class SubmitJob(Mapping, base.Job):
               .format(self.hash, self.doc_id))
         return self.doc_id
     
-    # TODO: fix so that entries with the same hash aren't all updated
-    #       i.e. fix querying by doc_id
     def update(self):
         db = load_db()
         table = db.table(self.__class__.__name__)
@@ -138,7 +135,6 @@ class SubmitJob(Mapping, base.Job):
         print('Updated Job {} in database with doc_id {}'
               .format(self.hash, self.doc_id))
         return self.doc_id
-    
     
     def _submit(self, report=True):
         if not os.path.exists(self.directory):
@@ -174,7 +170,6 @@ class SubmitJob(Mapping, base.Job):
                                                                      self.submit_id))
         return
 
-
     def run(self, report=True, block_if_submitted=True,
             block_if_stored=True):
         if block_if_submitted and self.submitted:
@@ -185,13 +180,11 @@ class SubmitJob(Mapping, base.Job):
         self.doc_id = self.update()
         return self.doc_id
         
-    
     def attach(self):
         process = subprocess.Popen(['submit', '--attach', str(self.submit_id)],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         return process
-    
     
     def kill(self, clean=True):
         process = subprocess.run(['submit', '--kill', str(self.submit_id)])
@@ -200,9 +193,7 @@ class SubmitJob(Mapping, base.Job):
             shutil.rmtree(self.directory)
         self.doc_id = self.update()
     
-    
-    # TODO: update this to be similar to PBSJob
-    def check_status(self):
+    def check_status(self, update_in_db=False):
         if self.status == 'Complete':
             return self.status_dict
         
@@ -217,28 +208,19 @@ class SubmitJob(Mapping, base.Job):
                 if runname == self.runname:
                     self.status = status
                     self.location = location
-#                 else:
-#                     for line in stdout_lines[1:]:
-#                         runname, id_, instance, status, location = \
-#                             info_line.split()
-#                         if runname == self.runname:
-#                             self.submit_id = id_
-#                             self.status = status
-#                             self.location = location
 
         if os.path.exists(self.output_path):
             self.status = 'Complete'
             self.attach()
             
-        self.doc_id = self.update()
+        if update_in_db:
+            self.doc_id = self.update()
         
         return self.status_dict
-    
     
     def write_input(self):
         return self.calculation.write_input(name=self.input_name,
                                             directory=self.directory)
-    
     
     def parse_output(self):
         output = self.calculation.parse_output(name=self.output_name,
@@ -263,7 +245,7 @@ class SubmitJob(Mapping, base.Job):
     def input_path(self):
         return os.path.join(self.directory,
                             self.calculation.input_name)
-    
+
     @property
     def output_path(self):
             return os.path.join(self.directory,
@@ -280,7 +262,6 @@ class SubmitJob(Mapping, base.Job):
             stdout = None
         return stdout
     
-    
     @property
     def stderr(self):
         stderr_path = os.path.join(self.calculation.directory,
@@ -292,16 +273,13 @@ class SubmitJob(Mapping, base.Job):
             stderr = None
         return stderr
     
-    
     @property
     def input(self):
         return self.calculation.input
     
-    
     @property
     def output(self):
         return self.calculation.output
-    
     
     @property
     def command(self):
@@ -332,11 +310,9 @@ class SubmitJob(Mapping, base.Job):
         command = base_command.format(**submit_data)
         return command
     
-    
     def _walltime_to_seconds(walltime):
         ftr = [3600,60,1]
         return sum([a*b for a,b in zip(ftr, map(int,walltime.split(':')))])
-    
     
     def as_dict(self):
         calculation_dict = self.calculation.as_dict()
@@ -362,11 +338,9 @@ class SubmitJob(Mapping, base.Job):
             'submitted': self.submitted
         }
         return dict_
-    
-        
+     
     def to_json(self):
         return json.dumps(self, cls=MontyEncoder)
-    
     
     @classmethod
     def from_dict(cls, dict_):

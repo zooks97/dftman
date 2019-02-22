@@ -18,6 +18,13 @@ from monty.json import MontyEncoder, MontyDecoder
 DB_PATH = 'db.tinydb'
 
 def init_db(path=DB_PATH,):
+    '''
+    Initialize a TinyDB database for DFTman
+    :param path: path to initialize database at
+    :type path: str
+    :returns: TinyDB database
+    :rtype: TinyDB
+    '''
     if not os.path.exists(path):
         db = TinyDB(path, storage=MSONStorage,
                     storage_proxy_class=MSONStorageProxy,
@@ -28,6 +35,13 @@ def init_db(path=DB_PATH,):
     return db
 
 def load_db(path=DB_PATH, init=True):
+    '''
+    Load a TinyDB database for DFTman
+    :param path: path to initialize (or load) database from
+    :type path: str
+    :returns: TinyDB database
+    :rtype: TinyDB
+    '''
     if os.path.exists(path):
         return TinyDB(path, storage=MSONStorage,
                       storage_proxy_class=MSONStorageProxy,
@@ -38,6 +52,15 @@ def load_db(path=DB_PATH, init=True):
         raise FileNotFoundError('{} does not exist.')
 
 def touch(fname, create_dirs):
+    '''
+    Touch a file and create its parent directories
+    if requested
+    :param fname: path to file to touch
+    :type fname: str
+    :param create_dirs: create parent directories if True
+    :type create_dirs: bool
+    :returns: None
+    '''
     if create_dirs:
         base_dir = os.path.dirname(fname)
         if not os.path.exists(base_dir):
@@ -93,7 +116,11 @@ class MSONStorage(Storage):
 
 
 class MSONStorageProxy(StorageProxy):
-    
+    '''
+    TinyDB storage proxy which supports arbitrary
+    objects as documents as long as they have a
+    doc_id attribute
+    '''
     def _new_document(self, key, value):
         doc_id = int(key)
         value.doc_id = doc_id
@@ -108,6 +135,7 @@ class MSONTable(Table):
         
         :param msonable: the msonable object to check
         :returns: doc_ids of matches
+        :rtype: list
         """
         query = Query()
         hash_ = msonable.hash
@@ -122,6 +150,7 @@ class MSONTable(Table):
 
         :param document: the document to insert
         :returns: the inserted document's ID
+        :rtype: int
         """
         
         if block_if_stored:
@@ -143,6 +172,7 @@ class MSONTable(Table):
 
         :param documents: a list of documents to insert
         :returns: a list containing the inserted documents' IDs
+        :rtype: list
         """
 
         if block_if_stored:
@@ -171,7 +201,9 @@ class MSONTable(Table):
         Write back documents by doc_id
         :param documents: a list of document to write back
         :param doc_ids: a list of document IDs which need to be written back
+        :type doc_ids: list
         :returns: a list of document IDs that have been written
+        :rtype: list
         """
         doc_ids = _get_doc_ids(doc_ids, eids)
 
@@ -200,3 +232,23 @@ class MSONTable(Table):
 
         return doc_ids
 
+    def get_multiple(self, cond=None, doc_ids=None, eid=None):
+        """
+        Get many documents specified by a query or and ID.
+        Returns ``None`` if the document doesn't exist
+        :param cond: the condition to check against
+        :type cond: Query
+        :param doc_id: the document IDs
+        :returns: the documents or None
+        :rtype: Object | None
+        """
+        # Documents specified by ID
+        if doc_ids is not None:
+            data = self._read()
+            documents = [data.get(doc_id, None) for doc_id in doc_ids]
+            return documents
+
+        # Documents specified by condition
+        all_documents = self.all()
+        documents = [doc for doc in all_documents if cond(doc)]
+        return documents

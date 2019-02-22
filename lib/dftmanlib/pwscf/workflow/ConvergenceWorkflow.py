@@ -8,7 +8,6 @@ import pandas as pd
 from collections.abc import Mapping
 
 from pymatgen import Structure
-from pymatgen.analysis.eos import EOS
 
 from monty.json import MontyDecoder
 
@@ -19,35 +18,14 @@ from ...job import SubmitJob, PBSJob, LocalJob
 from ... import base
 from ...db import load_db
 
-EOSWORKFLOWS_DIRECTORY = os.path.join(os.getcwd(), 'EOSWorkflows')
+CONVWORKFLOWS_DIRECTORY = os.path.join(os.getcwd(), 'ConvergenceWorkflows')
 
-class EOSWorkflow(Mapping, base.Workflow):
-    '''
-    Workflow for calculating Equations of State of crystalline
-        materials uding DFT implemented in PWscf. Runs a series
-        of hydrostatically-strained DFT energy calculations based
-        on a given structure, pseudopotentials, calculation inputs,
-        and strains.
-    :param structure:
-    :type structure:
-    :param pseudo:
-    :type pseudo:
-    :param base_inputs:
-    :type base_inputs:
-    :param min_strain:
-    :type min_strain:
-    :param max_strain:
-    :type max_strain:
-    :param n_strains:
-    :type n_strains:
-    :param job_type:
-    :type job_type:
-    :param job_kwargs:
-    :type job_kwargs:
-    :param metadata:
-    '''
+class ConvergenceWorkflow(Mapping, base.Workflow):
     def __init__(self, structure, pseudo, base_inputs,
-                 min_strain=-0.15, max_strain=0.15, n_strains=8,
+                 convergence_parameter='kgrid',
+                 convergence_values=[(4, 4, 4), (8, 8, 8),
+                                     (12, 12, 12), (16, 16, 16),
+                                     (20, 20, 20), (24, 24, 24)],
                  job_type='SubmitJob', job_kwargs={},
                  metadata={},
                  stored=False, doc_id=None,
@@ -60,9 +38,8 @@ class EOSWorkflow(Mapping, base.Workflow):
         self.pseudo = pseudo
         self.base_inputs = base_inputs
         
-        self.min_strain = min_strain
-        self.max_strain = max_strain
-        self.n_strains = n_strains
+        self.convergence_parameter = convergence_parameter
+        self.convergence_values = convergence_values
         
         self.job_type = job_type
         self.job_class = getattr(sys.modules[__name__], job_type)
@@ -70,16 +47,14 @@ class EOSWorkflow(Mapping, base.Workflow):
         
         self.metadata = metadata
         
-        self.strains = np.linspace(self.min_strain,
-                                   self.max_strain,
-                                   self.n_strains)
-        
         self.stored = stored 
         self.doc_id = doc_id
         self.jobs_stored = jobs_stored
         self.job_ids = job_ids
         
-        self.directory = os.path.join(EOSWORKFLOWS_DIRECTORY, self.hash)
+        self._jobs = None
+        
+        self.directory = os.path.join(CONVWORKFLOWS_DIRECTORY, self.hash)
     
     def __getitem__(self, item):
         return self.as_dict()[item]
@@ -95,7 +70,7 @@ class EOSWorkflow(Mapping, base.Workflow):
         table = db.table(self.__class__.__name__)
         self.doc_id = table.insert(self)
         doc_ids = table.write_back([self], doc_ids=[self.doc_id])
-        print('Inserted EOSWorkflow {} into database with doc_id {}'
+        print('Inserted ConvergenceWorkflow {} into database with doc_id {}'
               .format(self.hash, self.doc_id))
         return self.doc_id
         
@@ -118,9 +93,8 @@ class EOSWorkflow(Mapping, base.Workflow):
             'structure': structure,
             'pseudo': self.pseudo,
             'base_inputs': self.base_inputs,
-            'min_strain': self.min_strain,
-            'max_strain': self.max_strain,
-            'n_strains': self.n_strains
+            'convergence_parameter': self.convergence_parameter,
+            'convergence_values': self.convergence_values
         }
         return base.hash_dict(key_dict)
     
@@ -150,12 +124,22 @@ class EOSWorkflow(Mapping, base.Workflow):
     
     def _make_jobs(self):
         jobs = []
-        for strain in self.strains:
-            structure = copy.deepcopy(self.structure)
+        for value in self.convergence_values:
             inputs = copy.deepcopy(self.base_inputs)
-            
-            structure.apply_strain(strain)
-            inputs['structure'] = structure
+            if self.convergence_parameter == 'kpoints_grid':
+                inputs['kpoints_grid'] = value
+            elif self.convergence_parameter == 'kpra':
+                evenize = lambda x: x+1 if (x%2) else x
+                inputs['kpoints_grid'] = (
+                    evenize(int(np.ceil(value * 1/self.structure.lattice.a))),
+                    evenize(int(np.ceil(value * 1/self.structure.lattice.b))),
+                    evenize(int(np.ceil(value * 1/self.structure.lattice.c)))
+                )
+            elif self.convergence_parameter == 'ecutwfc':
+                inputs['system']['ecutwfc'] = value
+                
+            inputs['structure'] = self.structure
+            # inputs['pseudo'] = self.pseudo
             
             calculation = pwcalculation_helper(
                 **inputs, additional_inputs = list(self.pseudo.values()))
@@ -163,25 +147,24 @@ class EOSWorkflow(Mapping, base.Workflow):
             job = self.job_class(calculation, runname=calculation.hash,
                                  parent_directory=self.directory,
                                  **self.job_kwargs,
-                                 metadata={'strain': strain})
+                                 metadata={'parameter': value})
             
             jobs.append(job)
         
         return jobs
-    
-    def _get_jobs(self):
-        if self.jobs_stored:
-            db = load_db()
-            table = db.table(self.job_type)
-            jobs = table.get_multiple(doc_ids=self.job_ids)
-            # jobs = [table.get(doc_id=job_id) for job_id in self.job_ids]
-        else:
-            jobs = self._make_jobs()
-        return jobs
          
     @property
     def jobs(self):
-        return self._get_jobs()
+        if self._jobs:
+            return self._jobs
+        elif self.jobs_stored:
+            db = load_db()
+            table = db.table(self.job_type)
+            self._jobs = table.get_multiple(doc_ids=self.job_ids)
+            return self._jobs
+        else:
+            self._jobs = self._make_jobs()
+            return self._jobs
     
     @property
     def input(self):
@@ -189,9 +172,8 @@ class EOSWorkflow(Mapping, base.Workflow):
             'structure': self.structure,
             'pseudo': self.pseudo,
             'base_inputs': self.base_inputs,
-            'min_strain': self.min_strain,
-            'max_strain': self.max_strain,
-            'n_strains': self.n_strains
+            'convergence_parameter': self.convergence_parameter,
+            'convergence_values': self.convergence_values
         }
     
     def parse_output(self, update_to_db=False):
@@ -202,7 +184,7 @@ class EOSWorkflow(Mapping, base.Workflow):
             if job.status['status'] == 'Complete':
                 job.parse_output(update_to_db=False)
                 job_data = {
-                    'strain': job.metadata['strain'],
+                    'parameter': job.metadata['parameter'],
                     'energy': job.output.final_energy,  # eV
                     'volume': job.input.structure.volume  # A^3
                 }
@@ -214,15 +196,7 @@ class EOSWorkflow(Mapping, base.Workflow):
             table = db.table(jobs[0].__class__.__name__)
             table.write_back(jobs, doc_ids=[job.doc_id for job in jobs])
         
-        if not data_df.empty:
-            equations = ['murnaghan', 'birch', 'vinet',
-                         'birch_murnaghan', 'pourier_tarantola',
-                         'deltafactor', 'numerical_eos']
-            eos_fits = {}
-            for equation in equations:
-                eos = EOS(equation)
-                eos_fits[equation] = eos.fit(data_df['volume'], data_df['energy'])
-            return eos_fits
+        return data_df
         
     @property
     def output(self):
@@ -230,12 +204,11 @@ class EOSWorkflow(Mapping, base.Workflow):
             
     def as_dict(self):
         dict_ = {
-            'structure': self.structure,
+            'structure': self.structure.as_dict(),
             'pseudo': self.pseudo,
             'base_inputs': self.base_inputs,
-            'min_strain': self.min_strain,
-            'max_strain': self.max_strain,
-            'n_strains': self.n_strains,
+            'convergence_parameter': self.convergence_parameter,
+            'convergence_values': self.convergence_values,
             'job_type': self.job_type,
             'job_kwargs': self.job_kwargs,
             'stored': self.stored,

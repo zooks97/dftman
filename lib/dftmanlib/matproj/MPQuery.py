@@ -11,9 +11,14 @@ from monty.json import MontyEncoder, MontyDecoder
 class MPQuery():
     def __init__(self, criteria, properties, API):
         '''
-        :param criteria: dictionary of query criteria
-        :param properties: list of properties to retrieve
-        :param API: Materials Project API key string
+        Object representing a query to the Materials Project database
+            and its result
+        :param criteria: query criteria in pymongo format
+        :type criteria: dict
+        :param properties: properties to retrieve
+        :type properties: list
+        :param API: Materials Project API key
+        :type API: str
         '''
         self.properties = properties
         self.criteria = criteria
