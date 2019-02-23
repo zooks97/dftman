@@ -342,54 +342,55 @@ patterns = {
         'flags': [re.DOTALL],
         'postprocess': _kpoints_post,
     },
-    'job_done': {
-        'pattern': r'JOB DONE\.',
-        'flags': [],
-        'postprocess': bool,
-    },
-    'electronically_converged': {
-        'pattern': r'SCF convergence NOT achieved',
-        'flags': [],
-        'postprocess': lambda x: not bool(x),
-    },
-    'cpu_time_exceeded': {
-        'pattern': r'Maximum CPU time exceeded',
-        'flags': [],
-        'postprocess': lambda x: not bool(x),
-    },
-    'max_steps_reached': {
-        'pattern': r'The maximum number of ionic\/electronic relaxation steps has been reached',
-        'flags': [],
-        'postprocess': bool, 
-    },
-    'wentzcovitch_max_reached': {
-        'pattern': r'The maximum number of iterations was reached in Wentzcovitch Damped Dynamics',
-        'flags': [],
-        'postprocess': lambda x: bool,
-    },
-    'eigenvalues_converged': {
-        'pattern': r'c_bands.*eigenvalues not converged',
-        'flags': [],
-        'postprocess': lambda x: not bool(x), 
-    },
-    'general_error': {
-        'pattern': r'\%\%\%\%\%\%',
-        'flags': [],
-        'postprocess': bool,
-    },
-    'deprecated_feature_used': {
-        'pattern': r'DEPRECATED',
-        'flags': [],
-        'postprocess': bool,
-    },
-    'scf_correction_too_large': {
-        'pattern': r'SCF correction compared to forces is too large, reduce conv\_thr',
-        'flags': [],
-        'postprocess': bool,
-    },
     'vdw_correction': {
         'pattern': r'Carrying out vdW\-DF run using the following parameters: ([\w\s]+)$',
         'flags': [re.MULTILINE],
         'postprocess': str
-    }
+    },
+    'job_done': {
+        'pattern': r'JOB DONE\.',
+        'flags': [],
+        'postprocess': str,
+    },
+    'not_electronically_converged': {
+        'pattern': r'SCF convergence NOT achieved',
+        'flags': [],
+        'postprocess': str,
+    },
+    'cpu_time_exceeded': {
+        'pattern': r'Maximum CPU time exceeded',
+        'flags': [],
+        'postprocess': str,
+    },
+    'max_steps_reached': {
+        'pattern': r'The maximum number of ionic\/electronic relaxation steps has been reached',
+        'flags': [],
+        'postprocess': str, 
+    },
+    'wentzcovitch_max_reached': {
+        'pattern': r'The maximum number of iterations was reached in Wentzcovitch Damped Dynamics',
+        'flags': [],
+        'postprocess': str,
+    },
+    'eigenvalues_not_converged': {
+        'pattern': r'c_bands.*eigenvalues not converged',
+        'flags': [],
+        'postprocess': str, 
+    },
+    'general_error': {
+        'pattern': r'\%{78}(.*?)\%{78}',
+        'flags': [re.DOTALL | re.MULTILINE],
+        'postprocess': lambda x: x.strip(),
+    },
+    'deprecated_feature_used': {
+        'pattern': r'DEPRECATED',
+        'flags': [],
+        'postprocess': str,
+    },
+    'scf_correction_too_large': {
+        'pattern': r'SCF correction compared to forces is too large, reduce conv\_thr',
+        'flags': [],
+        'postprocess': str,
+    },
+
 }

@@ -78,13 +78,22 @@ class PBSJob(Mapping, base.Job):
         self.metadata = metadata
         
         self.pbs_id = pbs_id
+        self.submission_time = submission_time
+        self.submitted = submitted
+        self.doc_id = doc_id
+        
+        if runname:
+            self.runname = runname
+        else:
+            self.runname = 'dftman_{}'.format(random.randint(1000,999999))
+        
         if status:
             self.status = status
         else:
             self.status = {'pbs_id': pbs_id,
                            'username': None,
                            'queue': None,
-                           'runname': runname,
+                           'runname': self.runname,
                            'session_id': None,
                            'nnodes': nnodes,
                            'np': np,
@@ -95,14 +104,6 @@ class PBSJob(Mapping, base.Job):
                            'submission_time': submission_time,
                            'doc_id': doc_id,
                            'hash': self.hash}
-        self.submission_time = submission_time
-        self.submitted = submitted
-        self.doc_id = doc_id
-        
-        if runname:
-            self.runname = runname
-        else:
-            self.runname = 'dftman_{}'.format(random.randint(1000,999999))
         
         if directory:
             self.directory = directory

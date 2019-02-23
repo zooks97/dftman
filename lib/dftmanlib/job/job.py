@@ -1,9 +1,11 @@
+from ..db import load_db
+
 import subprocess
 import os
 import getpass
 import pandas as pd
 
-def pbsjob_statuses(jobs):
+def pbsjob_statuses(jobs, update_in_db=False):
     '''
     Check the statuses of a set of PBSJobs
     :param jobs: Jobs to check status of
@@ -18,6 +20,10 @@ def pbsjob_statuses(jobs):
     if not df.empty:
         df = df.set_index('PBS ID')
         df = df[['Run Name', 'Status', 'Elapsed Time', 'Walltime', 'Queue', 'Doc ID']]
+    if update_in_db:
+        db = load_db()
+        table = db.table('PBSJob')
+        table.write_back(jobs, doc_ids=[job.doc_id for job in jobs])
     return df
 
 
@@ -68,11 +74,13 @@ def pbs_status():
     return status_df
         
     
-def submitjob_statuses(jobs):
+def submitjob_statuses(jobs, update_in_db=False):
     '''
     Check the statuses of a set of SubmitJobs
     :param jobs: Jobs to check status of
     :type jobs: SubmitJob
+    :param update_to_db: Whether to update job in database
+    :type update_to_db: bool
     :returns: status data frame
     :rtype: pandas.DataFrame
     '''
@@ -81,8 +89,12 @@ def submitjob_statuses(jobs):
         status_dicts.append(job.check_status())
     df = pd.DataFrame(status_dicts)
     if not df.empty:
-        df = df.set_index('Run Name')
-        df = df[['Status', 'ID', 'Location', 'Submission Time', 'Hash', 'Doc ID']]
+        df = df.set_index('Submit ID')
+        df = df[['Run Name', 'Status', 'Instance', 'Location', 'Doc ID']]
+    if update_in_db:
+        db = load_db()
+        table = db.table('SubmitJob')
+        table.write_back(jobs, doc_ids=[job.doc_id for job in jobs])
     return df
     
     
@@ -102,13 +114,13 @@ def submit_status():
             status = status.strip().split()
             status_dict = {
                 'Run Name': status[0],
-                'ID': int(status[1]),
+                'Submit ID': int(status[1]),
                 'Instance': int(status[2]),
                 'Status': status[3],
                 'Location': status[4]
             }
             status_dicts.append(status_dict)
-        status_df = pd.DataFrame(status_dicts).set_index('ID')
+        status_df = pd.DataFrame(status_dicts).set_index('Submit ID')
         status_df = status_df[['Run Name', 'Status', 'Instance', 'Location']]
     else:
         status_df = pd.DataFrame([])

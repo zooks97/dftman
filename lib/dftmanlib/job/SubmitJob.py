@@ -47,8 +47,8 @@ class SubmitJob(Mapping, base.Job):
                  runname=None, parent_directory=None,
                  metadata=None,
                  directory=None, submit_id=None,
-                 status=None, location=None,
-                 submission_time=None, submitted=False,
+                 status=None,submission_time=None,
+                 submitted=False,
                  doc_id=None, hash=None):
         self.calculation = calculation
         self.code = code
@@ -57,8 +57,6 @@ class SubmitJob(Mapping, base.Job):
         self.ncpus = ncpus
         
         self.submit_id = submit_id
-        self.status = status
-        self.location = location
         self.submission_time = submission_time
         self.submitted = submitted
         self.process = None
@@ -69,6 +67,20 @@ class SubmitJob(Mapping, base.Job):
             self.runname = runname
         else:
             self.runname = 'dftman{}'.format(random.randint(1000,999999))
+        
+        if status:
+            self.status = status
+        else:
+            self.status = {
+                'submit_id': submit_id,
+                'runname': self.runname,
+                'instance': None,
+                'status': None,
+                'location': None,
+                'submission_time': submission_time,
+                'doc_id': doc_id,
+                'hash': self.hash
+            }
         
         if directory:
             self.directory = directory
@@ -93,7 +105,6 @@ class SubmitJob(Mapping, base.Job):
             'runname': self.runname,
             'submit_id': self.submit_id,
             'status': self.status,
-            'location': self.location,
             'submission_time': self.submission_time,
             'metadata': self.metadata,
             'directory': self.directory,
@@ -162,7 +173,7 @@ class SubmitJob(Mapping, base.Job):
         except:
             raise ValueError('Could not find id. Didn\'t submit?')
         
-        self.status = 'Submitted'
+        self.status['status'] = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
         
         print('Submitted job runname {} hash {} submit id {}'.format(self.runname,
@@ -188,14 +199,16 @@ class SubmitJob(Mapping, base.Job):
     
     def kill(self, clean=True):
         process = subprocess.run(['submit', '--kill', str(self.submit_id)])
-        self.status = 'Killed'
+        self.status['status'] = 'Killed'
         if clean:
             shutil.rmtree(self.directory)
         self.doc_id = self.update()
     
     def check_status(self, update_in_db=False):
-        if self.status == 'Complete':
-            return self.status_dict
+        if not self.submit_id:
+            raise ValueError('Job must have a Submit ID')
+        if self.status['status'] == 'Complete':
+            return self.status
         
         stdout = subprocess.check_output(['submit', '--status',
                                           str(self.submit_id)]).decode('utf-8')
@@ -206,17 +219,31 @@ class SubmitJob(Mapping, base.Job):
                 runname, id_, instance, status, location = info_line.split()
                 id_, instance = int(id_), int(instance)
                 if runname == self.runname:
-                    self.status = status
-                    self.location = location
-
+                    self.status = {
+                        'submit_id': id_,
+                        'runname': runname,
+                        'instance': instance,
+                        'status': status,
+                        'location': location,
+                        'submission_time': self.submission_time,
+                        'doc_id': self.doc_id,
+                        'hash': self.hash
+                    }
+                    
         if os.path.exists(self.output_path):
-            self.status = 'Complete'
+            self.status['status'] = 'Complete'
             self.attach()
             
         if update_in_db:
             self.doc_id = self.update()
-        
-        return self.status_dict
+            
+        pretty_status = {'Submit ID': self.submit_id,
+                         'Run Name': self.status.get('runname'),
+                         'Status': self.status.get('status'),
+                         'Instance': self.status.get('instance'),
+                         'Location': self.status.get('location'),
+                         'Doc ID': self.doc_id}
+        return pretty_status
     
     def write_input(self):
         return self.calculation.write_input(name=self.input_name,
@@ -227,19 +254,6 @@ class SubmitJob(Mapping, base.Job):
                                              directory=self.directory)
         self.update()
         return output
-    
-    @property
-    def status_dict(self):
-        status_dict = {
-            'Status': self.status,
-            'ID': self.submit_id,
-            'Run Name': self.runname,
-            'Location': self.location,
-            'Submission Time': self.submission_time,
-            'Hash': self.hash,
-            'Doc ID': self.doc_id,
-        }
-        return status_dict
         
     @property
     def input_path(self):
@@ -329,7 +343,6 @@ class SubmitJob(Mapping, base.Job):
             'runname': self.runname,
             'submit_id': self.submit_id,
             'status': self.status,
-            'location': self.location,
             'submission_time': self.submission_time,
             'metadata': self.metadata,
             'directory': self.directory,

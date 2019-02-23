@@ -129,6 +129,8 @@ class PWOutput(base.Output):
         excluded_properties = ['kpoints_cart', 'kpoints_frac', 'bands_data']
         dict_ = {key: value for key, value in self.data.items()
                  if key not in excluded_properties}
+        for key in excluded_properties:
+            dict_[key] = 'EXCLUDED FROM PRINTING'
         return pprint.pformat(dict_)
         
     def read_patterns(self, patterns):
@@ -267,16 +269,32 @@ class PWOutput(base.Output):
     
     @property
     def succeeded(self):
-        if any([bool(self.data.get('cpu_time_exceeded')),
-                bool(self.data.get('max_steps_reached')),
-                bool(self.data.get('wentzcovitch_max_reached')),
-                bool(self.data.get('general_error')),
-                bool(self.data.get('electronically_converged')),
-                bool(self.data.get('eigenvalues_converged')),
-                not bool(self.data.get('job_done'))]):
-                return False
-        else:
-            return True
+        succeeded = True
+        failure_reason = []
+        # should only occur once
+        if self.data.get('cpu_time_exceeeded'):
+            succeeded = False
+            failure_reason.append('CPU time was exceeded')
+        if self.data.get('max_steps_reached'):
+            succeeded = False
+            failure_reason.append('Maximum ionic/electronic steps reached')
+        if self.data.get('wentzcovitch_max_reached'):
+            succeeded = False
+            failure_reason.append('Maximum Wentzcovitch Damped Dynamics steps reached')
+        if self.data.get('not_electronically_converged'):
+            succeeded = False
+            failure_reason.append('SCF convergence not achieved')
+        if self.data.get('eigenvalues_not_converged'):
+            succeeded = False
+            failure_reason.append('Some eigenvalues were not converged')
+        if self.data.get('general_error'):
+            succeeded = False
+            failure_reason.append('General error(s) given')
+        if not self.data.get('job_done'):
+            succeeded = False
+            failure_reason.append('Job not done')
+        
+        return succeeded, failure_reason
         
     @property
     def output(self):
@@ -287,7 +305,7 @@ class PWOutput(base.Output):
             '@module': self.__class__.__module__,
             '@class': self.__class__.__name__,
             'filename': self.filename,
-            # 'data': self.data,
+            # 'data': self.data,  # data not saved to maintain database performance
         }
         return dict_
     
@@ -410,7 +428,7 @@ class PWCalculation(base.Calculation):
         :param name: string output file name
         :param directory: run directory path as a string
         :param output_type: type of output to parse
-            'stdout' and 'xml' are supported for pw.x
+            'stdout' is supported for pw.x
         :return: PWOutput or PWXML object
         '''
         if name:

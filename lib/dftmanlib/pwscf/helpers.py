@@ -1,6 +1,9 @@
+import json
+
 from .pwscf import *
 
-def pseudo_helper(structure, pseudo_family, pseudo_table_path):
+def pseudo_helper(structure, pseudo_family='GBRV_US_PBE',
+                  pseudo_table_path='/data/tools/dftman/pseudo_table.json'):
     '''
     Helper function for constructing an appropriate pseudopotential
         dictionary for PWscf from a structure, pseudopotential family,
@@ -47,6 +50,15 @@ def pseudo_helper(structure, pseudo_family, pseudo_table_path):
                for specie in species}
    
     return pseudos
+
+# TODO: implement more rich pseudopotential data
+def pseudo_table(pseudo_table_path='/data/tools/dftman/pseudo_table.json'):
+    with open(pseudo_table_path, 'r') as f:
+        pseudo_table = json.load(f)
+        
+    pseudo_families = list(pseudo_table.keys())
+    
+    return pseudo_families
 
 def pwinput_helper(structure, pseudo, control={}, system={},
                    electrons={}, ions={}, cell={}, kpoints_mode='automatic',
