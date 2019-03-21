@@ -150,11 +150,6 @@ def add_project(_):
         '_path': str(project_path),
         '_tool': str(tool_dest)
     }
-        
-    # make directories
-    project_path.mkdir(parents=True)
-    # copy files
-    shutil.copy(str(tool_source), str(tool_dest))
     
     # load projects table
     projects_list = load_projects(as_df=False)
@@ -162,6 +157,11 @@ def add_project(_):
     projects_list.append(project_dict)
     # write new projects table
     write_projects(projects_list)
+        
+    # make directories
+    project_path.mkdir(parents=True)
+    # copy files
+    shutil.copy(str(tool_source), str(tool_dest))
     
     # show projects
     show_projects()
@@ -195,8 +195,10 @@ def duplicate_project(_):
     og_name = name_field.value
     dup_name = duplicate_field.value
     
-    projects_df = load_projects(as_df=True)
-    og_project = projects_df[projects_df.Name == og_name].to_dict('records')[0]
+    projects_list = load_projects(as_df=False)
+    for i, project in enumerate(projects_list):
+        if project['Name'] == og_name:
+            og_project = project
     og_path = pathlib.Path(og_project['_path'])
     og_tool = pathlib.Path(og_project['_tool'])
     
