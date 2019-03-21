@@ -69,7 +69,7 @@ def _initial_atomic_positions_post(match):
         line = line.split()
         site = int(line[0])
         specie = line[1]
-        coords = [float(i) for i in [6, 7, 8]]
+        coords = [float(line[i]) for i in [6, 7, 8]]
         positions.append((specie, coords))
 
     return positions
