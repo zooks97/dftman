@@ -1,0 +1,7 @@
+qgrid>=1.1.1
+tinydb>=3.13.0
+numpy>=1.16.2
+pymatgen>=2019.3.13
+pandas>=0.24.2
+monty>=1.0.6
+
