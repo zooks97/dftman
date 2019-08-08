@@ -9,7 +9,7 @@ import pandas as pd
 from monty.json import MontyEncoder, MontyDecoder
 
 class MPQuery():
-    def __init__(self, criteria, properties, API):
+    def __init__(self, criteria, properties, API, postprocess=(lambda x: x)):
         '''
         Object representing a query to the Materials Project database
             and its result
@@ -19,10 +19,13 @@ class MPQuery():
         :type properties: list
         :param API: Materials Project API key
         :type API: str
+        :param postprocess: postprocessing function to further refine results
+        :type postprocess: function
         '''
         self.properties = properties
         self.criteria = criteria
         self.API = API
+        self.postprocess = postprocess
         self.result = None
 
     def __repr__(self):
@@ -57,9 +60,10 @@ class MPQuery():
         #     Structure and other objects are dictionaries.
         # This is useful for creating database keys by avoiding
         #     needing to ensure all objects are serializable
-        self.result = m.query(criteria=self.criteria,
-                              properties=self.properties,
-                              mp_decode=False)
+        result = m.query(criteria=self.criteria,
+                         properties=self.properties,
+                         mp_decode=False)
+        self.result = self.postprocess(result)
         
     @property
     def df(self):

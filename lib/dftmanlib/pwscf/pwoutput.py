@@ -394,3 +394,8 @@ patterns = {
     },
 
 }
+
+fast_patterns = patterns.copy()
+del fast_patterns['bands_data']
+del fast_patterns['kpoints_cart']
+del fast_patterns['kpoints_frac']

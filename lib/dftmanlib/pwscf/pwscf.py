@@ -122,8 +122,8 @@ class PWOutput(base.Output):
         self.filename = filename
         self.data = data
         self.patterns = patterns
-        if filename:
-            self.read_patterns(patterns)
+#         if filename:
+#             self.read_patterns(patterns)
         
     def __repr__(self):
         excluded_properties = ['kpoints_cart', 'kpoints_frac', 'bands_data']
@@ -160,9 +160,9 @@ class PWOutput(base.Output):
             all_matches[key] = matches
         self.data.update(all_matches)
     
-    def parse_output(self, filename):
+    def parse_output(self, filename, patterns=pwoutput.patterns):
         self.filename = filename
-        self.read_patterns()
+        self.read_patterns(patterns=patterns)
         return self.data
     
     def get_first(self, property_):
@@ -305,7 +305,7 @@ class PWOutput(base.Output):
             '@module': self.__class__.__module__,
             '@class': self.__class__.__name__,
             'filename': self.filename,
-            # 'data': self.data,  # data not saved to maintain database performance
+            'data': self.data,  # this is a significant area for performance improvement
         }
         return dict_
     
@@ -420,7 +420,8 @@ class PWCalculation(base.Calculation):
         return self.input_name
 
     def parse_output(self, name=None, directory=None,
-                     output_type='stdout'):
+                     output_type='stdout',
+                     patterns=pwoutput.patterns):
         '''
         Parse the calculation's output file by creating
             the appropriate output object and using it to
@@ -438,7 +439,10 @@ class PWCalculation(base.Calculation):
         output_path = os.path.join(self.directory,
                                    self.output_name)
         if output_type == 'stdout':
-            output = PWOutput(filename=output_path)
+            output = PWOutput(filename=output_path,
+                              patterns=patterns)
+            output.parse_output(filename=output_path,
+                                patterns=patterns)
             self.output = output
             self.output_type = output_type
 

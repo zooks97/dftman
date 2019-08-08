@@ -104,7 +104,7 @@ venv.bak/
 .mypy_cache/
 
 # simulation files
-.in
-.out
-.xml
+* .in
+*.out
+* .xml
 .vscode/settings.json

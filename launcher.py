@@ -1,8 +1,5 @@
 import shutil
-import uuid
 import time
-import getpass
-import socket
 import json
 import os
 
@@ -14,7 +11,7 @@ import pandas as pd
 
 from ipywidgets import Button, Text, Dropdown, HBox, VBox
 from IPython.display import clear_output, display
-from tinydb import *
+# from tinydb import *
 
 
 # TODO: get everything from git
@@ -22,7 +19,6 @@ from tinydb import *
 # TODO: implement tool dropdown to choose which notebook to initialize a new project with
 # TODO: transition to a tabbed interface with different functions in different tabs (create, delete, duplicate)
 #           this shold allow for cleaner code and more options
-# TODO: move all loading functions and shit to a python script and use %run magic
 
 
 qgrid.enable()
@@ -46,39 +42,39 @@ DEFAULT_TOOLS = [None, 'default.ipynb']
 
 
 add_button = Button(
-                description='Add Project',
-                icon='plus',
-                tooltip='Add a New Project',
-                button_style='success',
-                disabled=True
-            )
+    description='Add Project',
+    icon='plus',
+    tooltip='Add a New Project',
+    button_style='success',
+    disabled=True
+)
 
 delete_button = Button(
-                description='Delete Project',
-                icon='minus',
-                tooltip='Delete Project and its Files',
-                button_style='danger',
-                disabled=True
-            )
+    description='Delete Project',
+    icon='minus',
+    tooltip='Delete Project and its Files',
+    button_style='danger',
+    disabled=True
+)
 duplicate_button = Button(
-                    description='Duplicate Project',
-                    icon='plus',
-                    tooltip='Duplicate Project and its Files',
-                    button_style='info',
-                    disabled=True
-            )
+    description='Duplicate Project',
+    icon='plus',
+    tooltip='Duplicate Project and its Files',
+    button_style='info',
+    disabled=True
+)
 tool_dropdown = Dropdown(
-                options=DEFAULT_TOOLS,
-                value=None,
-                description='Tool',
-                disabled=False,
-            )
+    options=DEFAULT_TOOLS,
+    value=None,
+    description='Tool',
+    disabled=False,
+)
 style = {'description_width': 'initial'}
 name_field = Text(description='Project Name', style=style)
 duplicate_field = Text(description='Duplicate Name', style=style)
 
 
-def load_projects(table_path=PROJECTS_TABLE_PATH, as_df=False):
+def load_projects(table_path=PROJECTS_TABLE_PATH, as_df=False) -> pd.DataFrame:
     '''
     Read the projects table into (probably) a
         list of dictionaries
@@ -92,6 +88,7 @@ def load_projects(table_path=PROJECTS_TABLE_PATH, as_df=False):
         projects = pd.DataFrame(projects)
     return projects
 
+
 def write_projects(projects, table_path=PROJECTS_TABLE_PATH):
     '''
     Dump what should be a list of dictionaries into the
@@ -101,6 +98,7 @@ def write_projects(projects, table_path=PROJECTS_TABLE_PATH):
         projects = projects.to_dict('records')
     with open(table_path, 'w') as f:
         json.dump(projects, f)
+
 
 def install_libs():
     '''
@@ -112,19 +110,20 @@ def install_libs():
     if pathlib.Path(LOCAL_SRC_PATH).exists():  # src is only in dev, lib already present
         print('Not installing libs, already in dev!')
         return
-    
+
     locallib = pathlib.Path(LOCAL_LIB_PATH)
     globallib = pathlib.Path(GLOBAL_LIB_PATH)
-    
+
     # create local lib directory if necessary
     if not locallib.exists():
         locallib.mkdir()
-    
+
     # scan globallib and add any missing softlinks
     for f in globallib.iterdir():
         dst = locallib / f.name
         if not dst in locallib.iterdir():
             dst.symlink_to(f)
+
 
 def add_project(_):
     '''
@@ -134,14 +133,15 @@ def add_project(_):
     :param name_field: Jupyter widget for name insertion
     '''
     name = name_field.value
-    
+
     project_path = pathlib.Path(PROJECTS_PATH) / '{}'.format(name)
     tool_source = pathlib.Path(GLOBAL_BIN_PATH) / DEFAULT_TOOL
     tool_dest = project_path / '{}.ipynb'.format(name)
-    
-    path_link = '<a href="{}" target="_blank">{}</a>'.format(project_path, project_path)
+
+    path_link = '<a href="{}" target="_blank">{}</a>'.format(
+        project_path, project_path)
     tool_link = '<a href="{}" target="_blank">Notebook</a>'.format(tool_dest)
-    
+
     project_dict = {
         'Name': str(name),
         'Path': str(path_link),
@@ -150,22 +150,26 @@ def add_project(_):
         '_path': str(project_path),
         '_tool': str(tool_dest)
     }
-    
+
     # load projects table
     projects_list = load_projects(as_df=False)
-    # add project
-    projects_list.append(project_dict)
+    if projects_list:
+        # add project
+        projects_list.append(project_dict)
+    else:
+        projects_list = [project_dict]
     # write new projects table
     write_projects(projects_list)
-        
+
     # make directories
     project_path.mkdir(parents=True)
     # copy files
     shutil.copy(str(tool_source), str(tool_dest))
-    
+
     # show projects
     show_projects()
-    
+
+
 def delete_project(_):
     '''
     Delete a project by adding finding and deleting the project from
@@ -173,44 +177,46 @@ def delete_project(_):
     :param name_field: Jupyter widget for name insertion
     '''
     name = name_field.value
-    
+
     # load projects, find project, and remove project
     #     from the projects table
     projects_list = load_projects(as_df=False)
     for i, project in enumerate(projects_list):
         if project['Name'] == name:
             deleted_project = projects_list.pop(i)
-    
-    # remove project directory
-    try:
-        shutil.rmtree(deleted_project['_path'])
-    except:
-        pass
+            # remove project directory
+            try:
+                shutil.rmtree(deleted_project['_path'])
+            except:
+                pass
     write_projects(projects_list)
-    
+
     show_projects()
 
 # TODO: implement project duplication
+
+
 def duplicate_project(_):
     og_name = name_field.value
     dup_name = duplicate_field.value
-    
-    projects_list = load_projects(as_df=False)
-    for i, project in enumerate(projects_list):
-        if project['Name'] == og_name:
-            og_project = project
-    og_path = pathlib.Path(og_project['_path'])
-    og_tool = pathlib.Path(og_project['_tool'])
-    
-    # TODO: rename all appropriate files from og_tool with the dup_name
+
     dup_path = pathlib.Path(PROJECTS_PATH) / '{}'.format(dup_name)
     dup_tool = dup_path / '{}.ipynb'.format(dup_name)
-    shutil.copytree(og_path, dup_path)
-    shutil.move(dup_path / og_tool.name, dup_tool)
-    
-    path_link = '<a href="{}" target="_blank">{}</a>'.format(dup_path, dup_path)
+
+    projects_list = load_projects(as_df=False)
+    for project in projects_list:
+        if project['Name'] == og_name:
+            og_project = project
+            og_path = pathlib.Path(og_project['_path'])
+            og_tool = pathlib.Path(og_project['_tool'])
+            # TODO: rename all appropriate files from og_tool with the dup_name
+            shutil.copytree(og_path, dup_path)
+            shutil.move(dup_path / og_tool.name, dup_tool)
+
+    path_link = '<a href="{}" target="_blank">{}</a>'.format(
+        dup_path, dup_path)
     tool_link = '<a href="{}" target="_blank">Notebook</a>'.format(dup_tool)
-    
+
     project_dict = {
         'Name': str(dup_name),
         'Path': str(path_link),
@@ -219,17 +225,18 @@ def duplicate_project(_):
         '_path': str(dup_path),
         '_tool': str(dup_tool)
     }
-    
+
     # load projects table
     projects_list = load_projects(as_df=False)
     # add project
     projects_list.append(project_dict)
     # write new projects table
     write_projects(projects_list)
-    
+
     # show projects
     show_projects()
-    
+
+
 def project_name(change):
     '''
     Callback when the name_field changes
@@ -239,10 +246,10 @@ def project_name(change):
     :param change: ipywidget state change dictionary
     '''
     name = change['new']
-    
+
     projects_df = load_projects(as_df=True)
-    
-    if not projects_df.empty: 
+
+    if not projects_df.empty:
         if name and name in projects_df['Name'].tolist():
             add_button.disabled = True
             delete_button.disabled = False
@@ -250,7 +257,7 @@ def project_name(change):
             if duplicate_field.value in projects_df['Name'].tolist():
                 duplicate_button.disabled = True
             else:
-                duplicate_button.disabled  = False
+                duplicate_button.disabled = False
         elif name:
             add_button.disabled = False
             delete_button.disabled = True
@@ -265,9 +272,10 @@ def project_name(change):
         if name:
             add_button.disabled = False
         else:
-            add_button_disabled = True
-            delete_button_disabled = True
-            duplicate_button_disabled = True
+            add_button.disabled = True
+            delete_button.disabled = True
+            duplicate_button.disabled = True
+
 
 def duplicate_name(change):
     '''
@@ -275,17 +283,18 @@ def duplicate_name(change):
     :param change: ipywidget state change dictionary
     '''
     name = change['new']
-    
+
     projects_df = load_projects(as_df=True)
-    
-    if not projects_df.empty: 
+
+    if not projects_df.empty:
         if name in projects_df['Name'].tolist():
-            duplicate_button.disabled  = True
+            duplicate_button.disabled = True
         elif name:
             duplicate_button.disabled = False
         else:
             duplicate_button.disabled = True
-            
+
+
 def select_cb(event, w):
     '''
     Callback when a different row of the qgrid is selected
@@ -295,13 +304,14 @@ def select_cb(event, w):
     :w: qgrid status information dictionary
     '''
     ind = event['new'][0]
-    
+
     projects_df = load_projects(as_df=True)
-    
+
     # find name
     name = projects_df.iloc[ind].Name
-    name_field.value = name    
-    
+    name_field.value = name
+
+
 def show_projects():
     '''
     Show the projects and their metadata as listed in the
@@ -313,7 +323,7 @@ def show_projects():
     projects_df = load_projects(as_df=True)
     if not projects_df.empty:
         projects_df = projects_df[show_columns]
-    
+
     if projects_df.empty:
         print('No projects exist. Make a project first.')
         display(qgrid.show_grid(projects_df,
@@ -326,19 +336,23 @@ def show_projects():
     add_button.on_click(callback=add_project)
     delete_button.on_click(callback=delete_project)
     duplicate_button.on_click(callback=duplicate_project)
-    
+
     name_field.value = ''
     name_field.observe(project_name, names='value')
-    
+
     duplicate_field.value = ''
     duplicate_field.observe(duplicate_name, names='value')
-        
-    
+
     display(
         VBox(
             [HBox([name_field, add_button, delete_button]),
              HBox([duplicate_field, duplicate_button])]
-            )
-           )
-    
+        )
+    )
+
     return
+
+
+if __name__ == '__main__':
+    install_libs()
+    show_projects()

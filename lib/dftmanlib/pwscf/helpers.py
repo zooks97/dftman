@@ -51,7 +51,7 @@ def pseudo_helper(structure, pseudo_family='GBRV_US_PBE',
    
     return pseudos
 
-# TODO: implement more rich pseudopotential data
+# TODO: implement more rich pseudopotential data, e.g. cutoffs table for SSSP
 def pseudo_table(pseudo_table_path='/data/tools/dftman/pseudo_table.json'):
     with open(pseudo_table_path, 'r') as f:
         pseudo_table = json.load(f)

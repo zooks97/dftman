@@ -127,7 +127,7 @@ class SubmitJob(Mapping, base.Job):
     def hash(self):
         return self.calculation.hash
 
-    def insert(self, block_if_stored=True):
+    def insert(self, block_if_stored=False):
         db = load_db()
         table = db.table(self.__class__.__name__)
         if self.doc_id:
@@ -181,8 +181,8 @@ class SubmitJob(Mapping, base.Job):
                                                                      self.submit_id))
         return
 
-    def run(self, report=True, block_if_submitted=True,
-            block_if_stored=True):
+    def run(self, report=True, block_if_submitted=False,
+            block_if_stored=False):
         if block_if_submitted and self.submitted:
             print('Already run, not running.')
             return
@@ -208,7 +208,13 @@ class SubmitJob(Mapping, base.Job):
         if not self.submit_id:
             raise ValueError('Job must have a Submit ID')
         if self.status['status'] == 'Complete':
-            return self.status
+            pretty_status = {'Submit ID': self.submit_id,
+                             'Run Name': self.status.get('runname'),
+                             'Status': self.status.get('status'),
+                             'Instance': self.status.get('instance'),
+                             'Location': self.status.get('location'),
+                             'Doc ID': self.doc_id}
+            return pretty_status
         
         stdout = subprocess.check_output(['submit', '--status',
                                           str(self.submit_id)]).decode('utf-8')
@@ -249,9 +255,9 @@ class SubmitJob(Mapping, base.Job):
         return self.calculation.write_input(name=self.input_name,
                                             directory=self.directory)
     
-    def parse_output(self):
+    def parse_output(self, **kwargs):
         output = self.calculation.parse_output(name=self.output_name,
-                                             directory=self.directory)
+                                               directory=self.directory, **kwargs)
         self.update()
         return output
         

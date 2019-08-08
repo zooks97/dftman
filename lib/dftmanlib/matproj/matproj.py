@@ -1,6 +1,6 @@
 from . import MPQuery
 
-def mpquery_helper(criteria, properties, API):
+def mpquery_helper(criteria, properties, API, postprocess=(lambda x: x)):
     '''
     Helper function for running Materials Project queries in
         DFTman
@@ -12,6 +12,8 @@ def mpquery_helper(criteria, properties, API):
     :type properties: list
     :param API: Materials Project API key
     :type API: str
+    :param postprocess: postprocessing function to further refine results
+    :type postprocess: function
     '''
     required_properties = ['material_id', 'pretty_formula',
                            'elements', 'structure']
@@ -20,5 +22,5 @@ def mpquery_helper(criteria, properties, API):
     else:
         properties = required_properties
 
-    mpquery = MPQuery(criteria, sorted(properties), API)
+    mpquery = MPQuery(criteria, sorted(properties), API, postprocess)
     return mpquery

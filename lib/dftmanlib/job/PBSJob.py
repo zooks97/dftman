@@ -134,7 +134,7 @@ class PBSJob(Mapping, base.Job):
     def __len__(self):
         return len(self.as_dict())
     
-    def insert(self, block_if_stored=True):
+    def insert(self, block_if_stored=False):
         db = load_db()
         table = db.table(self.__class__.__name__)
         if self.doc_id:
@@ -190,7 +190,7 @@ class PBSJob(Mapping, base.Job):
             self.update()
         return output
     
-    def run(self, block_if_run=True):
+    def run(self, block_if_run=False):
         if not self.doc_id:
             self.insert()
         if not os.path.exists(self.directory):
