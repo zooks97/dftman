@@ -206,7 +206,7 @@ class SubmitJob(Mapping, base.Job):
             return pretty_status
         
         stdout = subprocess.check_output(['submit', '--status', str(self.submit_id)]).decode('utf-8')
-        if stdout and self.submit_id in stdout:
+        if stdout and str(self.submit_id) in stdout:
             stdout_lines = stdout.strip().split('\n')
             if len(stdout_lines) > 1:
                 info_line = stdout_lines[-1]
