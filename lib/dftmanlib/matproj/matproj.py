@@ -15,7 +15,7 @@ def mpquery_helper(criteria, properties, API, postprocess=(lambda x: x)):
     :param postprocess: postprocessing function to further refine results
     :type postprocess: function
     '''
-    required_properties = ['job_id', 'pretty_formula',
+    required_properties = ['task_id', 'pretty_formula',
                            'elements', 'structure']
     if properties:
         properties += required_properties

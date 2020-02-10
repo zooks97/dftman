@@ -33,7 +33,7 @@ class MPQuery():
         Return a dataframe representation of the query results.
         '''
         if not self.df.empty:
-            df = self.df.set_index('job_id')
+            df = self.df.set_index('task_id')
             return df.__repr__()
         else:
             return self.df.__repr__()
@@ -45,7 +45,7 @@ class MPQuery():
         Display the query results in a qgrid
         '''
         if not self.df.empty:
-            df = self.df.set_index('job_id')
+            df = self.df.set_index('task_id')
         else:
             df = self.df
         display(qgrid.show_grid(df))
