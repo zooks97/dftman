@@ -109,7 +109,7 @@ def submit_status():
     stdout = process.stdout.peek().decode('utf-8')
     stderr = process.stderr.peek().decode('utf-8')
 
-    if subprocess.returncode == 0:
+    if process.returncode == 0:
         status_text = stdout.strip()
     else:
         raise subprocess.CalledProcessError
