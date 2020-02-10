@@ -1,7 +1,8 @@
+# TODO: add scheduler_stderr.txt and scheduler_stdout.txt support
+
 import subprocess
 import shlex
 import time
-import random
 import re
 import os
 import os.path
@@ -33,9 +34,6 @@ class SubmitJob(Mapping, base.Job):
     :type walltime: str
     :param ncpus: Number of CPUs requested
     :type ncpus: int
-    :param runname: Run name of the job in submit, must be strictly alphanumeric
-        (no '-', '_', ' ', etc., only [a-z], [A-Z], and [1-9]
-    :type runname: str
     :param parent_directory: parent directory for job directory
     :type parent_directory: str
     :param metadata: any additional data used to e.g. tag the job, useful for
@@ -44,10 +42,10 @@ class SubmitJob(Mapping, base.Job):
     
     def __init__(self, calculation, code,
                  walltime='01:00:00', ncpus=1,
-                 runname=None, parent_directory=None,
+                 parent_directory=None,
                  metadata=None,
                  directory=None, submit_id=None,
-                 status=None,submission_time=None,
+                 status=None, submission_time=None,
                  submitted=False,
                  doc_id=None, hash=None):
         self.calculation = calculation
@@ -59,21 +57,13 @@ class SubmitJob(Mapping, base.Job):
         self.submit_id = submit_id
         self.submission_time = submission_time
         self.submitted = submitted
-        self.process = None
         self.doc_id = doc_id
-        
-        
-        if runname:
-            self.runname = runname
-        else:
-            self.runname = 'dftman{}'.format(random.randint(1000,999999))
-        
+
         if status:
             self.status = status
         else:
             self.status = {
                 'submit_id': submit_id,
-                'runname': self.runname,
                 'instance': None,
                 'status': None,
                 'location': None,
@@ -87,12 +77,10 @@ class SubmitJob(Mapping, base.Job):
         elif parent_directory:
             self.directory = os.path.join(parent_directory, self.hash)
         else:
-            self.directory = os.path.join(SUBMITJOBS_DIRECTORY,
-                                          '{}_{}'.format(self.runname,
-                                                         self.hash))
+            self.directory = os.path.join(SUBMITJOBS_DIRECTORY, '{}'.format(self.hash))
             
         self.input_name = self.calculation.input_name
-        self.output_name = str(self.runname)+'.stdout'
+        self.output_name = 'dftman.stdout'
 
     def __repr__(self):
         dict_ = {
@@ -102,7 +90,6 @@ class SubmitJob(Mapping, base.Job):
             'code': self.code,
             'walltime': self.walltime,
             'ncpus': self.ncpus,
-            'runname': self.runname,
             'submit_id': self.submit_id,
             'status': self.status,
             'submission_time': self.submission_time,
@@ -131,11 +118,10 @@ class SubmitJob(Mapping, base.Job):
         db = load_db()
         table = db.table(self.__class__.__name__)
         if self.doc_id:
-            raise 
+            raise ValueError('Already have a doc_id, cannot insert existing entry.')
         self.doc_id = table.insert(self, block_if_stored)
         doc_ids = table.write_back([self], doc_ids=[self.doc_id])
-        print('Inserted Job {} into database with doc_id {}'
-              .format(self.hash, self.doc_id))
+        print('Inserted Job {} into database with doc_id {}'.format(self.hash, self.doc_id))
         return self.doc_id
     
     def update(self):
@@ -143,29 +129,32 @@ class SubmitJob(Mapping, base.Job):
         table = db.table(self.__class__.__name__)
         query = Query()
         self.doc_id = table.write_back([self], doc_ids=[self.doc_id])[0]
-        print('Updated Job {} in database with doc_id {}'
-              .format(self.hash, self.doc_id))
+        print('Updated Job {} in database with doc_id {}'.format(self.hash, self.doc_id))
         return self.doc_id
     
     def _submit(self, report=True):
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
-        self.calculation.write_input(name=self.runname+'.in',
-                                     directory=self.directory)
+        self.calculation.write_input(name='dftman.in', directory=self.directory)
 
-        process = subprocess.Popen(shlex.split(self.command),
-                                   cwd=self.directory,
-                                   stdout=subprocess.PIPE,
+        process = subprocess.Popen(shlex.split(self.command), cwd=self.directory, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
-        self.process = process
+        process.wait()
         
-        self.submitted = True
+        if process.returncode == 0:
+            self.submitted = True
+        else:
+            raise subprocess.CalledProcessError
         
         stdout = process.stdout.peek().decode('utf-8')
         stderr = process.stderr.peek().decode('utf-8')
         
-        id_re = re.compile(r'Check run status with the command: submit'\
-                            ' --status (\d+)')
+        with open(os.path.join(self.directory, 'scheduler_stdout.txt'), 'w') as f:
+            f.write(stdout)
+        with open(os.path.join(self.directory, 'scheduler_stderr.txt'), 'w') as f:
+            f.write(stderr)
+
+        id_re = re.compile(r'Check run status with the command: submit --status (\d+)')
         id_match = re.search(id_re, stdout)
         
         try:
@@ -173,12 +162,13 @@ class SubmitJob(Mapping, base.Job):
         except:
             raise ValueError('Could not find id. Didn\'t submit?')
         
+        # For now, delete all local copies of the transferred files automatically to save storage space
+        shutil.rmtree(os.path.join(self.directory, '{}_transfer'.format(self.submit_id)))
+
         self.status['status'] = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
         
-        print('Submitted job runname {} hash {} submit id {}'.format(self.runname,
-                                                                     self.hash,
-                                                                     self.submit_id))
+        print('Submitted job hash {} submit id {}'.format(self.hash, self.submit_id))
         return
 
     def run(self, report=True, block_if_submitted=False,
@@ -209,25 +199,22 @@ class SubmitJob(Mapping, base.Job):
             raise ValueError('Job must have a Submit ID')
         if self.status['status'] == 'Complete':
             pretty_status = {'Submit ID': self.submit_id,
-                             'Run Name': self.status.get('runname'),
                              'Status': self.status.get('status'),
                              'Instance': self.status.get('instance'),
                              'Location': self.status.get('location'),
                              'Doc ID': self.doc_id}
             return pretty_status
         
-        stdout = subprocess.check_output(['submit', '--status',
-                                          str(self.submit_id)]).decode('utf-8')
-        if stdout and self.runname in stdout:
+        stdout = subprocess.check_output(['submit', '--status', str(self.submit_id)]).decode('utf-8')
+        if stdout and self.submit_id in stdout:
             stdout_lines = stdout.strip().split('\n')
             if len(stdout_lines) > 1:
                 info_line = stdout_lines[-1]
                 runname, id_, instance, status, location = info_line.split()
                 id_, instance = int(id_), int(instance)
-                if runname == self.runname:
+                if id_ == self.submit_id:
                     self.status = {
                         'submit_id': id_,
-                        'runname': runname,
                         'instance': instance,
                         'status': status,
                         'location': location,
@@ -244,7 +231,6 @@ class SubmitJob(Mapping, base.Job):
             self.doc_id = self.update()
             
         pretty_status = {'Submit ID': self.submit_id,
-                         'Run Name': self.status.get('runname'),
                          'Status': self.status.get('status'),
                          'Instance': self.status.get('instance'),
                          'Location': self.status.get('location'),
@@ -252,29 +238,24 @@ class SubmitJob(Mapping, base.Job):
         return pretty_status
     
     def write_input(self):
-        return self.calculation.write_input(name=self.input_name,
-                                            directory=self.directory)
+        return self.calculation.write_input(name=self.input_name, directory=self.directory)
     
     def parse_output(self, **kwargs):
-        output = self.calculation.parse_output(name=self.output_name,
-                                               directory=self.directory, **kwargs)
+        output = self.calculation.parse_output(name=self.output_name, directory=self.directory, **kwargs)
         self.update()
         return output
         
     @property
     def input_path(self):
-        return os.path.join(self.directory,
-                            self.calculation.input_name)
+        return os.path.join(self.directory, self.calculation.input_name)
 
     @property
     def output_path(self):
-            return os.path.join(self.directory,
-                                self.output_name)
+            return os.path.join(self.directory, self.output_name)
 
     @property
     def stdout(self):
-        stdout_path = os.path.join(self.calculation.directory,
-                                   str(self.submit_id)+'.stdout')
+        stdout_path = os.path.join(self.calculation.directory, str(self.submit_id)+'.stdout')
         if os.path.exists(stdout_path):
             with open(stdout_path, 'r') as f:
                 stdout = f.read()
@@ -284,8 +265,7 @@ class SubmitJob(Mapping, base.Job):
     
     @property
     def stderr(self):
-        stderr_path = os.path.join(self.calculation.directory,
-                                   str(self.submit_id)+'.stdout')
+        stderr_path = os.path.join(self.calculation.directory, str(self.submit_id)+'.stdout')
         if os.path.exists(stderr_path):
             with open(stderr_path, 'r') as f:
                 stderr = f.read()
@@ -303,14 +283,8 @@ class SubmitJob(Mapping, base.Job):
     
     @property
     def command(self):
-        base_command = 'submit --detach -n {ncpus:d} -w {walltime:s}'\
-                       ' {runname:s} {additional_inputs:s}'\
-                       ' {code:s} -in {input_name:s}'
+        base_command = 'submit --detach -n {ncpus:d} -w {walltime:s} --runName=dftman {additional_inputs:s} {code:s} -in {input_name:s}'
         
-        if self.runname:
-            runname_string = '--runName="{:s}"'.format(self.runname)
-        else:
-            runname_string = ''
         if self.calculation.additional_inputs:
             additional_inputs = ' -i '.join(self.calculation.additional_inputs)
             additional_inputs_string = '-i {:s}'.format(additional_inputs)
@@ -321,7 +295,6 @@ class SubmitJob(Mapping, base.Job):
         submit_data = {
             'ncpus': self.ncpus,
             'walltime': self.walltime,
-            'runname': runname_string,
             'additional_inputs': additional_inputs_string,
             'code': self.code,
             'input_name': self.calculation.input_name
@@ -346,7 +319,6 @@ class SubmitJob(Mapping, base.Job):
             'code': self.code,
             'walltime': self.walltime,
             'ncpus': self.ncpus,
-            'runname': self.runname,
             'submit_id': self.submit_id,
             'status': self.status,
             'submission_time': self.submission_time,
@@ -363,7 +335,6 @@ class SubmitJob(Mapping, base.Job):
     
     @classmethod
     def from_dict(cls, dict_):
-        decoded = {key: MontyDecoder().process_decoded(value)
-                   for key, value in dict_.items()
+        decoded = {key: MontyDecoder().process_decoded(value) for key, value in dict_.items()
                    if not key.startswith("@")}
         return cls(**decoded)
