@@ -25,9 +25,9 @@ def dftman_hash(bytes_):
     '''
     Hash function for DFTman
     :param bytes_: bytes to hash
-    :return: 32-byte blake2b hex hash digest
+    :return: 12-byte blake2b hex hash digest
     '''
-    blake2b_hash = hashlib.blake2b(digest_size=32, salt=b'htdft')
+    blake2b_hash = hashlib.blake2b(digest_size=12, salt=b'htdft')
     blake2b_hash.update(bytes_)
     return str(blake2b_hash.hexdigest())
 
@@ -37,7 +37,7 @@ def hash_dict(dict_):
         by sorting it recursively (using sort_recursive)
         then hashing it using blake2b (using dftman_hash)
     :param dict_: dictionary to hash
-    :return: 32-byte blake2b hex hash digest from dftma_hash
+    :return: 12-byte blake2b hex hash digest from dftma_hash
     '''
     sorted_dict = sort_recursive(dict_)
     hash_bytes = bytes(str(sorted_dict).encode())

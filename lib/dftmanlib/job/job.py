@@ -104,7 +104,15 @@ def submit_status():
     :returns: status data frame
     :rtype: pandas.DataFrame
     '''
-    status_text = subprocess.check_output(['submit', '--status']).decode('utf-8').strip()
+    process = subprocess.Popen(['submit', '--status'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process.wait()
+    stdout = process.stdout.peek().decode('utf-8')
+    stderr = process.stderr.peek().decode('utf-8')
+
+    if subprocess.returncode == 0:
+        status_text = stdout.strip()
+    else:
+        raise subprocess.CalledProcessError
     
     nruns = len(status_text) - 1 if len(status_text) else 0
     if nruns:
