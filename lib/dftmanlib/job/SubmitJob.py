@@ -163,7 +163,7 @@ class SubmitJob(Mapping, base.Job):
             raise ValueError('Could not find id. Didn\'t submit?')
         
         # For now, delete all local copies of the transferred files automatically to save storage space
-        shutil.rmtree(os.path.join(self.directory, '{}_transfer'.format(self.submit_id)))
+        # shutil.rmtree(os.path.join(self.directory, '{}_transfer'.format(self.submit_id)))
 
         self.status['status'] = 'Submitted'
         self.submission_time = time.asctime(time.gmtime())
