@@ -90,7 +90,7 @@ def submitjob_statuses(jobs, update_in_db=False):
     df = pd.DataFrame(status_dicts)
     if not df.empty:
         df = df.set_index('Submit ID')
-        df = df[['Run Name', 'Status', 'Instance', 'Location', 'Doc ID']]
+        df = df[['Status', 'Instance', 'Location', 'Doc ID']]
     if update_in_db:
         db = load_db()
         table = db.table('SubmitJob')
@@ -113,7 +113,6 @@ def submit_status():
         for status in statuses:
             status = status.strip().split()
             status_dict = {
-                'Run Name': status[0],
                 'Submit ID': int(status[1]),
                 'Instance': int(status[2]),
                 'Status': status[3],
@@ -121,7 +120,7 @@ def submit_status():
             }
             status_dicts.append(status_dict)
         status_df = pd.DataFrame(status_dicts).set_index('Submit ID')
-        status_df = status_df[['Run Name', 'Status', 'Instance', 'Location']]
+        status_df = status_df[['Status', 'Instance', 'Location']]
     else:
         status_df = pd.DataFrame([])
     return status_df
