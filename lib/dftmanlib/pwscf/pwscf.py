@@ -117,7 +117,7 @@ class PWOutput(base.Output):
          ...}
     :type patterns: dict
     '''
-    def __init__(self, filename='', data=defaultdict(list),
+    def __init__(self, filename='dftman.stdout', data=defaultdict(list),
                  patterns=pwoutput.patterns):
         self.filename = filename
         self.data = data
