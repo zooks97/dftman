@@ -1,14 +1,19 @@
 #!/bin/sh
 
+toolDirectory=$(dirname $(dirname $0))
+revision=$(basename $(realpath ${toolDirectory}))
+userDirectory=$HOME/DFTman/${revision}
+
 if [ ! -d $HOME/notebooks/DFTman ]; then
-    mkdir -p $HOME/notebooks/DFTman
-    ln -s /apps/dftman/dev/launcher.ipynb $HOME/notebooks/DFTman/launcher.ipynb
-    ln -s /apps/dftman/dev/launcher.py $HOME/notebooks/DFTman/launcher.py
-    cp -r /apps/dftman/dev/projects.json $HOME/notebooks/DFTman/projects.json
-    cp -r /apps/dftman/dev/projects $HOME/notebooks/DFTman/projects
-    mkdir $HOME/notebooks/DFTman/bin
-    cp /apps/dftman/dev/bin/default.ipynb $HOME/notebooks/DFTman/bin/default.ipynb
+    mkdir -p $userDirectory
+    ln -s $toolDirectory/launcher.ipynb $userDirectory/launcher.ipynb
+    ln -s $toolDirectory/launcher.py $userDirectory/launcher.py
+    cp -r $toolDirectory/projects $userDirectory/projects
+    cp $toolDirectory/projects.json $userDirectory/projects.json
+    mkdir $userDirectory/bin
+    cp $toolDirectory/bin/default.ipynb $userDirectory/bin/default.ipynb
 fi
 
-/usr/bin/invoke_app "$@" -C "start_jupyter -t $HOME/notebooks/DFTman/launcher.ipynb" \
+/usr/bin/invoke_app "$@" -C "start_jupyter -t $userDirectory/launcher.ipynb" \
                          -u anaconda3-5.1
+
