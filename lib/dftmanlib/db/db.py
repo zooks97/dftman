@@ -11,7 +11,7 @@ import warnings
 from collections.abc import Mapping
 
 from tinydb import TinyDB, Query, Storage, where
-from tinydb.database import Table, StorageProxy, _get_doc_id, _get_doc_ids
+from tinydb.database import Table, StorageProxy
 
 from monty.json import MontyEncoder, MontyDecoder
 
@@ -159,7 +159,7 @@ class MSONTable(Table):
                 raise AlreadyStoredError('Already stored at doc_ids {}'
                                          .format(doc_ids))
 
-        doc_id = self._get_doc_id(document)
+        doc_id = self._get_next_id()
         data = self._read()
         data[doc_id] = document
         self._write(data)
@@ -187,7 +187,7 @@ class MSONTable(Table):
         data = self._read()
 
         for doc in documents:
-            doc_id = self._get_doc_id(doc)
+            doc_id = self._get_next_id()
             doc_ids.append(doc_id)
 
             data[doc_id] = doc
@@ -196,7 +196,7 @@ class MSONTable(Table):
 
         return doc_ids
         
-    def write_back(self, documents, doc_ids=None, eids=None):
+    def write_back(self, documents, doc_ids=None):
         """
         Write back documents by doc_id
         :param documents: a list of document to write back
@@ -205,7 +205,6 @@ class MSONTable(Table):
         :returns: a list of document IDs that have been written
         :rtype: list
         """
-        doc_ids = _get_doc_ids(doc_ids, eids)
 
         if doc_ids is not None and not len(documents) == len(doc_ids):
             raise ValueError(
@@ -232,7 +231,7 @@ class MSONTable(Table):
 
         return doc_ids
 
-    def get_multiple(self, cond=None, doc_ids=None, eid=None):
+    def get_multiple(self, cond=None, doc_ids=None):
         """
         Get many documents specified by a query or and ID.
         Returns ``None`` if the document doesn't exist
